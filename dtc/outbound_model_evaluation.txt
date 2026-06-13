@@ -1,0 +1,28 @@
+OUTBOUND MATCH MODEL EVALUATION
+============================================================
+
+Training label: DTC 'Outbound Ticket Id' == candidate outbound ticket.
+This label is not used as an input feature.
+
+Candidate rows: 1987
+DTC orders: 85
+Orders where true outbound ticket appears in candidate set: 84
+Orders excluded from training because true ticket is absent: 1
+
+GROUPED 5-FOLD CROSS-VALIDATION BY DTC ROW
+  Evaluated only on orders where the true outbound ticket is present
+  in the generated candidate set.
+  Rule-score top-1 accuracy: 84/84 (100.0%)
+  Model top-1 accuracy:     84/84 (100.0%)
+  Model top-1 accuracy when true candidate is present: 100.0%
+
+FINAL MODEL FIT ON ALL LABELED CANDIDATES
+  In-sample top-1 accuracy: 84/85 (98.8%)
+
+Files written:
+  outbound_training_candidates_full.csv
+  outbound_training_features.csv
+  trained_outbound_scored_candidates.csv
+  trained_outbound_matches.csv
+  outbound_missing_true_candidates.csv
+  outbound_match_model.json

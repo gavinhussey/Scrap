@@ -1,0 +1,28 @@
+EOY-2025 PORTFOLIO MARKET VALUE  (Jan-2026 scrap prices rolled back via yfinance)
+============================================================================
+Futures move applied (Dec-31-2025 close / Jan-2026 avg close):
+  HRC=F   Dec-31=   935.000  Jan-avg=   944.350  factor=0.990
+  ALI=F   Dec-31=  2906.250  Jan-avg=  3060.363  factor=0.950
+  HG=F    Dec-31=     5.630  Jan-avg=     5.881  factor=0.957
+
+metal                    qty lbs      EOY-2025 $     wt%           basis
+COPPER                   333,694       1,041,725   42.4%   x0.957
+STEEL                  5,042,018         679,175   27.7%   x0.990
+ALUMINUM                 462,124         437,388   17.8%   x0.950
+STAINLESS STEEL          249,350         144,263    5.9%   Jan price (no proxy)
+BRASS                     36,410         110,249    4.5%   x0.957
+LEAD                     106,711          26,005    1.1%   Jan price (no proxy)
+OTHER                     26,579          14,934    0.6%   Jan price (no proxy)
+ZINC                       1,539             626    0.0%   Jan price (no proxy)
+ZWASTE                    26,049             259    0.0%   Jan price (no proxy)
+----------------------------------------------------------------------------
+TOTAL EOY-2025 MARKET VALUE            2,454,624
+(for reference) at Jan-2026 prices       2,536,010
+
+CAVEATS
+  - Quantities are the reconstructed EOY-2025 opening (held, floored >=0).
+  - Per-grade scrap price = real Jan-2026 sale vwap (true basis), rolled to
+    Dec-31 by the metal's futures move. ~weeks apart, so a small correction.
+  - Stainless/lead/zinc/other have NO Dec-2025 futures proxy (NI=F delisted)
+    -> held at Jan price; their EOY value is a Jan proxy, not Dec-31.
+  - This is MARKET (sale/liquidation) value, not cost/book value.

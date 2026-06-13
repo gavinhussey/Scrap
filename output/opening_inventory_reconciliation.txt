@@ -1,0 +1,91 @@
+END-OF-YEAR 2025 (OPENING) INVENTORY — BACKWARD RECONSTRUCTION
+========================================================================
+  opening = current physical count - inbound YTD + outbound YTD   (lbs)
+
+TOTALS (all yards, all grades)
+  current on hand :      2,811,235
+  - inbound YTD   :      9,114,674
+  + outbound YTD  :     12,422,255
+  = opening 2025  :      6,118,816   (3,059 tons)
+
+BY YARD
+  Merrillville current      1,172,200  - in      1,507,033  + out      3,959,989  = opening      3,625,156
+  Milton       current      1,639,035  - in      7,607,641  + out      8,462,266  = opening      2,493,660
+
+OPENING BY METAL (grade negatives netted within metal)
+  Merrillville ALUMINUM                      201,168   
+  Merrillville BRASS                          26,916   
+  Merrillville COPPER                        268,845   
+  Merrillville LEAD                           61,143   
+  Merrillville OTHER                             491   
+  Merrillville STAINLESS STEEL               117,216   
+  Merrillville STEEL                       2,931,716   
+  Merrillville ZINC                              984   
+  Merrillville ZWASTE                         16,677   
+  Milton       ALUMINUM                      241,519   
+  Milton       BRASS                           8,959   
+  Milton       COPPER                         53,227   
+  Milton       LEAD                           45,568   
+  Milton       OTHER                          26,088   
+  Milton       STAINLESS STEEL                54,967   
+  Milton       STEEL                       2,053,405   
+  Milton       ZINC                              555   
+  Milton       ZWASTE                          9,372   
+
+NEGATIVE GRADES (sold/processed more than bought + ending): 29
+  -> these indicate material reclassified between buy and sell; they net
+     out at the metal level above. Largest negatives:
+     Milton       H-13 SOLIDS                        STAINLESS STEEL         -71,026
+     Milton       SKELATAL                           STEEL                   -40,280
+     Milton       LAS                                STEEL                   -16,617
+     Milton       #1 ICW 80%                         COPPER                  -11,267
+     Milton       MIXED ALUMINUM                     ALUMINUM                 -4,842
+     Milton       304 STAINLESS SOLIDS               STAINLESS STEEL          -2,532
+     Milton       Dirty Aluminum Rims                ALUMINUM                 -2,372
+     Milton       380 NEW CAST W/ 5% RUBBER ATTACHME ALUMINUM                 -2,275
+     Milton       380 ALUMINUM TURNINGS              ALUMINUM                 -2,176
+     Milton       304 STAINLESS WITH POLY            STAINLESS STEEL          -1,940
+     Milton       ALUMINUM MLC                       ALUMINUM                 -1,834
+     Milton       ZZ DO NOT USE - AL FURNACE BOTTOMS ALUMINUM                 -1,520
+
+ESTIMATED OPENING VALUE (held grades @ MARKET spot price): $2,718,795
+  Market $/lb per grade = volume-weighted transacted price, ladder:
+  recent sale (<= 60d) -> YTD sale -> YTD purchase -> avg cost.
+  share of value by price source: sale (recent)=92%, sale (YTD)=7%, avg cost=1%, purchase (YTD)=1%, unpriced=0%
+
+PORTFOLIO WEIGHTS BY METAL  (share of the EOY-2025 book, MARKET-priced)
+  metal                    value $  wt%(value)           lbs   wt%(lbs)
+  COPPER                 1,161,875       42.7%       333,694       5.3%
+  STEEL                    708,673       26.1%     5,042,018      80.2%
+  ALUMINUM                 507,344       18.7%       462,124       7.3%
+  STAINLESS STEEL          174,459        6.4%       249,350       4.0%
+  BRASS                    123,225        4.5%        36,410       0.6%
+  LEAD                      27,314        1.0%       106,711       1.7%
+  OTHER                     15,023        0.6%        26,579       0.4%
+  ZINC                         622        0.0%         1,539       0.0%
+  ZWASTE                       259        0.0%        26,049       0.4%
+  -> by VALUE is the risk-relevant split; note how steel dominates by weight
+     but not by value, while copper/brass punch far above their tonnage.
+
+TOP 12 ITEMS BY VALUE WEIGHT
+  BARE BRIGHT COPPER             COPPER          13.8%  (    66,905 lbs @ $5.61 sale (recent))
+  SHEET IRON                     STEEL            9.9%  ( 2,131,476 lbs @ $0.13 sale (recent))
+  #1 ICW 88%                     COPPER           5.9%  (    33,006 lbs @ $4.85 sale (recent))
+  #1 COPPER                      COPPER           5.6%  (    28,461 lbs @ $5.38 sale (recent))
+  #1 ICW 80%                     COPPER           4.7%  (    25,640 lbs @ $5.00 sale (recent))
+  HEAVY MELT                     STEEL            3.1%  (   570,309 lbs @ $0.15 sale (recent))
+  #2 COPPER                      COPPER           2.9%  (    14,794 lbs @ $5.24 sale (recent))
+  AUTO CAST                      STEEL            2.8%  (   384,375 lbs @ $0.20 sale (recent))
+  6063 BARE ALUMINUM EXTRUSION   ALUMINUM         2.6%  (    35,999 lbs @ $1.96 sale (recent))
+  CLEAN SHEET                    STEEL            2.4%  (   448,582 lbs @ $0.15 sale (recent))
+  316 STAINLESS STEEL SOLIDS     STAINLESS STEEL   2.4%  (    55,999 lbs @ $1.18 sale (recent))
+  AL/CU RADIATORS - CLEAN        ALUMINUM         2.3%  (    19,865 lbs @ $3.15 sale (recent))
+
+ASSUMPTIONS / CAVEATS
+  - Join key: Material Code + yard (Milton=Benton Metals, Merrillville=
+    Merrillville Metal Recycling). Flow yard taken from source filename.
+  - Weight = inventory 'Total Net Weight' (WIP + finished goods), all lbs.
+  - Conservation assumed: no scrap/shrinkage/moisture adjustment applied.
+  - Inter-yard transfers only cancel if booked as one yard's outbound and
+    the other's inbound; otherwise per-yard openings carry that error.
+  - Snapshot date of the count must align with the YTD flow coverage.

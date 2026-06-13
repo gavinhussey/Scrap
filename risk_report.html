@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BMR — Scrapyard Risk Report</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Variables ─────────────────────────────────────────────────────────── */
+    :root {
+      --bg:          #f1f5f9;
+      --surface:     #ffffff;
+      --border:      #e2e8f0;
+      --text-primary:#0f172a;
+      --text-secondary:#64748b;
+      --text-muted:  #94a3b8;
+      --accent:      #2563eb;
+      --accent-light:#eff6ff;
+      --green:       #059669;
+      --green-light: #ecfdf5;
+      --red:         #dc2626;
+      --red-light:   #fef2f2;
+      --amber:       #d97706;
+      --amber-light: #fffbeb;
+      --header-bg:   #0f172a;
+      --radius:      12px;
+      --radius-sm:   8px;
+      --shadow:      0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md:   0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.05);
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    img { display: block; max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+    table { border-collapse: collapse; width: 100%; }
+
+    /* ── Layout ────────────────────────────────────────────────────────────── */
+    .container { max-width: 1360px; margin: 0 auto; padding: 0 32px; }
+
+    /* ── Header ────────────────────────────────────────────────────────────── */
+    .report-header {
+      background: var(--header-bg);
+      color: #fff;
+      padding: 40px 0 36px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .header-brand { display: flex; flex-direction: column; gap: 4px; }
+    .header-logo {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -.4px;
+      color: #fff;
+    }
+    .header-sub {
+      font-size: 12px;
+      color: #94a3b8;
+      font-weight: 400;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+    }
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+    .header-stat { text-align: right; }
+    .header-stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
+    .header-stat-value { font-size: 20px; font-weight: 600; color: #fff; margin-top: 2px; }
+    .header-stat-value.positive { color: #34d399; }
+    .divider-v { width: 1px; height: 36px; background: rgba(255,255,255,.1); }
+
+    /* ── Navigation strip ──────────────────────────────────────────────────── */
+    .nav-strip {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .nav-strip .container { display: flex; gap: 0; }
+    .nav-link {
+      display: inline-block;
+      padding: 14px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    .nav-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Page body ─────────────────────────────────────────────────────────── */
+    .page-body { padding: 40px 0 80px; }
+
+    /* ── KPI strip ─────────────────────────────────────────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .kpi-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -.5px;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+    .kpi-value.positive { color: var(--green); }
+    .kpi-value.negative { color: var(--red); }
+    .kpi-value.warning  { color: var(--amber); }
+    .kpi-delta {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ── Section ───────────────────────────────────────────────────────────── */
+    .section { margin-bottom: 48px; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -.2px;
+    }
+    .section-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 3px;
+    }
+
+    /* ── Badge ─────────────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+    .badge-live    { background: var(--green-light);  color: var(--green); }
+    .badge-pending { background: var(--amber-light);  color: var(--amber); }
+    .badge-draft   { background: #f1f5f9;              color: #64748b; }
+    .badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ── Card ──────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 20px;
+    }
+
+    /* ── Grid helpers ──────────────────────────────────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+    .col-span-2 { grid-column: span 2; }
+
+    /* ── Chart card ────────────────────────────────────────────────────────── */
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .chart-card img { width: 100%; border-radius: 6px; }
+    .chart-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 14px;
+    }
+
+    /* ── Inventory table ───────────────────────────────────────────────────── */
+    .inv-table { width: 100%; }
+    .inv-table thead tr {
+      border-bottom: 1px solid var(--border);
+    }
+    .inv-table th {
+      text-align: right;
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--text-muted);
+    }
+    .inv-table th:first-child { text-align: left; }
+    .inv-table td {
+      padding: 13px 14px;
+      text-align: right;
+      font-size: 13px;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .inv-table td:first-child { text-align: left; font-weight: 500; }
+    .inv-table tbody tr:last-child td { border-bottom: none; }
+    .inv-table tfoot td {
+      padding: 13px 14px;
+      text-align: right;
+      font-size: 13px;
+      font-weight: 700;
+      border-top: 1px solid var(--border);
+      color: var(--text-primary);
+    }
+    .inv-table tfoot td:first-child { text-align: left; }
+    .pnl-pos { color: var(--green); font-weight: 600; }
+    .pnl-neg { color: var(--red);   font-weight: 600; }
+
+    /* Commodity colour dots */
+    .metal-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .metal-dot::before {
+      content: '';
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-steel     { --c: #607080; }
+    .dot-aluminium { --c: #a8a9ad; }
+    .dot-copper    { --c: #b87333; }
+    .dot-stainless { --c: #6a9ab0; }
+    .dot-brass     { --c: #c9a84c; }
+    .metal-dot::before { background: var(--c); }
+
+    /* ── Commodity deep dive ───────────────────────────────────────────────── */
+    .commodity-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .commodity-swatch {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .commodity-name {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -.2px;
+    }
+    .commodity-sub {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-left: auto;
+    }
+
+    /* ── Placeholder card ──────────────────────────────────────────────────── */
+    .placeholder-card {
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 32px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .placeholder-icon { font-size: 32px; margin-bottom: 12px; opacity: .4; }
+    .placeholder-title { font-size: 15px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+    .placeholder-desc  { font-size: 13px; line-height: 1.7; max-width: 420px; margin: 0 auto; }
+
+    /* ── Methodology table ─────────────────────────────────────────────────── */
+    .method-table th, .method-table td {
+      padding: 11px 16px;
+      text-align: left;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+    .method-table th {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--text-muted);
+      background: #f8fafc;
+    }
+    .method-table tr:last-child td { border-bottom: none; }
+    .method-table td:first-child { font-weight: 500; color: var(--text-primary); }
+    .method-table td:not(:first-child) { color: var(--text-secondary); }
+
+    /* ── Footer ────────────────────────────────────────────────────────────── */
+    .report-footer {
+      background: var(--header-bg);
+      color: #475569;
+      padding: 28px 0;
+      font-size: 12px;
+      border-top: 1px solid rgba(255,255,255,.04);
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .footer-note { color: #334155; }
+
+    /* ── Utility ───────────────────────────────────────────────────────────── */
+    .mt-0  { margin-top: 0; }
+    .mb-16 { margin-bottom: 16px; }
+    .mb-24 { margin-bottom: 24px; }
+    .text-right { text-align: right; }
+    .text-muted  { color: var(--text-muted); }
+    .font-mono   { font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header class="report-header">
+  <div class="container">
+    <div class="header-inner">
+      <div class="header-brand">
+        <div class="header-logo">BMR / MMR</div>
+        <div class="header-sub">Scrapyard Portfolio Risk Report</div>
+      </div>
+      <div class="header-meta">
+        <div class="header-stat">
+          <div class="header-stat-label">Portfolio MTM</div>
+          <div class="header-stat-value">$4,853,829</div>
+        </div>
+        <div class="divider-v"></div>
+        <div class="header-stat">
+          <div class="header-stat-label">Unrealised P&amp;L</div>
+          <div class="header-stat-value positive">+$1,463,743</div>
+        </div>
+        <div class="divider-v"></div>
+        <div class="header-stat">
+          <div class="header-stat-label">Report Date</div>
+          <div class="header-stat-value" style="font-size:15px;color:#94a3b8;">June 9, 2026</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ── Nav ────────────────────────────────────────────────────────────────── -->
+<nav class="nav-strip">
+  <div class="container">
+    <a class="nav-link" href="#overview">Portfolio Overview</a>
+    <a class="nav-link" href="#var">Value at Risk</a>
+    <a class="nav-link" href="#montecarlo">Monte Carlo</a>
+    <a class="nav-link" href="#stress">Stress Scenarios</a>
+    <a class="nav-link" href="#prices">Price History</a>
+    <a class="nav-link" href="#aging">Inventory Aging</a>
+    <a class="nav-link" href="#commodities">Commodity Deep Dives</a>
+    <a class="nav-link" href="#signals">Sell Signals</a>
+    <a class="nav-link" href="#methodology">Methodology</a>
+  </div>
+</nav>
+
+<!-- ── Refresh banner ─────────────────────────────────────────────────────── -->
+<div style="background:#fffbeb;border-bottom:1px solid #fde68a;padding:10px 0;">
+  <div class="container" style="display:flex;align-items:center;gap:10px;font-size:12px;color:#92400e;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span><strong>Static report — generated June 9, 2026.</strong> Charts and tables reflect prices at that date. To refresh with current market data, run <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;">python run_risk_model.py --refresh</code> and regenerate this file.</span>
+  </div>
+</div>
+
+<!-- ── Page body ──────────────────────────────────────────────────────────── -->
+<main class="page-body">
+<div class="container">
+
+  <!-- KPI Strip -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Portfolio MTM Value</div>
+      <div class="kpi-value">$4,853,829</div>
+      <div class="kpi-delta">5 commodities · 13,315 tonnes held</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Unrealised Gain</div>
+      <div class="kpi-value positive">+$1,463,743</div>
+      <div class="kpi-delta">+43.2% vs book cost of $3,390,086</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">95% VaR — 30 Day</div>
+      <div class="kpi-value warning">$627,335</div>
+      <div class="kpi-delta">12.9% of portfolio · Parametric method</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">P(Loss) — 30 Day MC</div>
+      <div class="kpi-value warning">49.1%</div>
+      <div class="kpi-delta">10,000 simulations · GBM correlated paths</div>
+    </div>
+  </div>
+
+
+  <!-- ── Section 1: Portfolio Overview ──────────────────────────────────── -->
+  <section class="section" id="overview">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Portfolio Overview</div>
+        <div class="section-desc">Mark-to-market inventory valued at today's spot prices adjusted for scrap basis</div>
+      </div>
+      <span class="badge badge-live"><span class="badge-dot"></span>Live</span>
+    </div>
+
+    <div class="grid-2 mb-24">
+      <!-- Inventory table -->
+      <div class="card" style="overflow-x:auto;">
+        <div class="card-title">Inventory — Mark to Market</div>
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th>Commodity</th>
+              <th>Qty (t)</th>
+              <th>Avg Cost /t</th>
+              <th>Spot /t</th>
+              <th>Break-even /t</th>
+              <th>Basis</th>
+              <th>Book Value</th>
+              <th>MTM Value</th>
+              <th>Unr. P&amp;L</th>
+              <th title="Change in MTM value per $1/tonne move in the reference futures price">$/t Sensitivity</th>
+              <th>Avg Days Held</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="metal-dot dot-steel">Steel</span></td>
+              <td>11,818</td>
+              <td>$153</td>
+              <td>$1,326</td>
+              <td>$899</td>
+              <td>17%</td>
+              <td>$1,806,170</td>
+              <td>$2,664,167</td>
+              <td class="pnl-pos">+$857,997</td>
+              <td>2,009</td>
+              <td>260</td>
+            </tr>
+            <tr>
+              <td><span class="metal-dot dot-aluminium">Aluminium</span></td>
+              <td>968</td>
+              <td>$891</td>
+              <td>$3,576</td>
+              <td>$2,620</td>
+              <td>34%</td>
+              <td>$862,237</td>
+              <td>$1,177,018</td>
+              <td class="pnl-pos">+$314,781</td>
+              <td>329</td>
+              <td>259</td>
+            </tr>
+            <tr>
+              <td><span class="metal-dot dot-copper">Copper</span></td>
+              <td>95</td>
+              <td>$3,115</td>
+              <td>$13,960</td>
+              <td>$9,879</td>
+              <td>31.5%</td>
+              <td>$296,524</td>
+              <td>$419,010</td>
+              <td class="pnl-pos">+$122,486</td>
+              <td>30</td>
+              <td>251</td>
+            </tr>
+            <tr>
+              <td><span class="metal-dot dot-stainless">Stainless</span></td>
+              <td>398</td>
+              <td>$755</td>
+              <td>$21,443</td>
+              <td>$15,610</td>
+              <td>4.8%</td>
+              <td>$300,358</td>
+              <td>$412,598</td>
+              <td class="pnl-pos">+$112,240</td>
+              <td>19</td>
+              <td>230</td>
+            </tr>
+            <tr>
+              <td><span class="metal-dot dot-brass">Brass</span></td>
+              <td>36</td>
+              <td>$3,456</td>
+              <td>$13,960</td>
+              <td>$9,623</td>
+              <td>35.9%</td>
+              <td>$124,798</td>
+              <td>$181,037</td>
+              <td class="pnl-pos">+$56,239</td>
+              <td>13</td>
+              <td>259</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td>13,315</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>$3,390,087</td>
+              <td>$4,853,830</td>
+              <td class="pnl-pos">+$1,463,743</td>
+              <td>2,400</td>
+              <td>—</td>
+            </tr>
+          </tfoot>
+        </table>
+        <div style="margin-top:14px;font-size:11px;color:var(--text-muted);line-height:1.7;">
+          <strong>Break-even /t:</strong> The reference futures price at which MTM value equals book cost (avg cost ÷ basis). If spot falls to this level, the unrealised gain is wiped out. &nbsp;|&nbsp;
+          <strong>$/t Sensitivity:</strong> Change in total MTM value for every $1/tonne move in the reference futures price (quantity × basis). &nbsp;|&nbsp;
+          <strong>Avg Days Held:</strong> Calendar days since purchase, averaged across all lots of that metal.
+        </div>
+      </div>
+
+      <!-- Commodity breakdown chart -->
+      <div class="chart-card">
+        <div class="chart-label">MTM Value by Commodity</div>
+        <img src="output/charts/commodity_breakdown.png" alt="Commodity Breakdown" />
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 2: Value at Risk ────────────────────────────────────────── -->
+  <section class="section" id="var">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Value at Risk</div>
+        <div class="section-desc">30-day horizon · Three independent methods · 90%, 95%, 99% confidence</div>
+      </div>
+      <span class="badge badge-live"><span class="badge-dot"></span>Live</span>
+    </div>
+
+    <div class="grid-2">
+      <div class="chart-card">
+        <div class="chart-label">95% VaR vs CVaR by Method</div>
+        <img src="output/charts/var_summary.png" alt="VaR Summary" />
+      </div>
+      <div class="card">
+        <div class="card-title">Method Comparison — 95% Confidence</div>
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>VaR</th>
+              <th>CVaR (ES)</th>
+              <th>Diversif. Benefit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Parametric</td>
+              <td>$627,335</td>
+              <td>$786,704</td>
+              <td>$282,446</td>
+            </tr>
+            <tr>
+              <td>EWMA</td>
+              <td>$629,116</td>
+              <td>$788,937</td>
+              <td>$354,472</td>
+            </tr>
+            <tr>
+              <td>Historical</td>
+              <td>$598,829</td>
+              <td>$702,399</td>
+              <td>$134,597</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:20px;padding:14px;background:var(--accent-light);border-radius:8px;font-size:12px;color:#1e40af;line-height:1.7;">
+          <strong>Reading this:</strong> VaR is the loss threshold that, at the 95% confidence level, we do not expect to exceed over 30 trading days — i.e. there is a 5% chance of a worse outcome. CVaR (Expected Shortfall) is the <em>average</em> loss in those worst 5% of outcomes, always higher than VaR. The diversification benefit is the reduction in portfolio VaR versus simply summing each metal's individual VaR, reflecting the fact that not all prices crash simultaneously. Parametric and EWMA differ slightly here because current market volatility is close to the 5-year average; in volatile periods the EWMA figure will be materially higher.
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 3: Monte Carlo ──────────────────────────────────────────── -->
+  <section class="section" id="montecarlo">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Monte Carlo Simulation — Portfolio</div>
+        <div class="section-desc">10,000 correlated GBM paths · 30 / 60 / 90 / 180 day horizons</div>
+      </div>
+      <span class="badge badge-live"><span class="badge-dot"></span>Live</span>
+    </div>
+
+    <div class="chart-card mb-24">
+      <div class="chart-label">Portfolio Value Distribution Over Time</div>
+      <img src="output/charts/monte_carlo.png" alt="Monte Carlo" />
+    </div>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-title">30-Day Outlook</div>
+        <table class="inv-table">
+          <tbody>
+            <tr><td>Median (50th pctile)</td><td class="text-right">$4,859,766</td></tr>
+            <tr><td>5th pctile (downside)</td><td class="text-right pnl-neg">$4,287,183</td></tr>
+            <tr><td>95th pctile (upside)</td><td class="text-right pnl-pos">$5,510,326</td></tr>
+            <tr><td>P(Loss)</td><td class="text-right" style="color:var(--amber);font-weight:600;">49.1%</td></tr>
+            <tr><td>Expected loss if loss</td><td class="text-right pnl-neg">$281,971</td></tr>
+            <tr><td>95% MC VaR</td><td class="text-right">$566,646</td></tr>
+            <tr><td>95% MC CVaR</td><td class="text-right">$694,312</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Percentile Ladder — 30 Day</div>
+        <table class="inv-table">
+          <thead><tr><th>Percentile</th><th>Value</th><th>vs Today</th></tr></thead>
+          <tbody>
+            <tr><td>1st</td><td>$4,073,911</td><td class="pnl-neg">−$779,919</td></tr>
+            <tr><td>5th</td><td>$4,287,183</td><td class="pnl-neg">−$566,646</td></tr>
+            <tr><td>25th</td><td>$4,612,749</td><td class="pnl-neg">−$241,080</td></tr>
+            <tr><td>50th</td><td>$4,859,766</td><td class="pnl-pos">+$5,937</td></tr>
+            <tr><td>75th</td><td>$5,123,572</td><td class="pnl-pos">+$269,743</td></tr>
+            <tr><td>95th</td><td>$5,510,326</td><td class="pnl-pos">+$656,496</td></tr>
+            <tr><td>99th</td><td>$5,785,407</td><td class="pnl-pos">+$931,578</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Horizon Comparison — 30 / 60 / 90 / 180 Days</div>
+        <table class="inv-table">
+          <thead><tr><th>Horizon</th><th>Median</th><th>5th Pctile</th><th>95th Pctile</th><th>P(Loss)</th><th>MC VaR 95%</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>30 days</td>
+              <td>$4,859,766</td>
+              <td class="pnl-neg">$4,287,183</td>
+              <td class="pnl-pos">$5,510,326</td>
+              <td style="color:var(--amber);font-weight:600;">49.1%</td>
+              <td>$566,646</td>
+            </tr>
+            <tr>
+              <td>60 days</td>
+              <td>$4,869,344</td>
+              <td class="pnl-neg">$4,082,159</td>
+              <td class="pnl-pos">$5,814,795</td>
+              <td style="color:var(--amber);font-weight:600;">48.8%</td>
+              <td>$771,670</td>
+            </tr>
+            <tr>
+              <td>90 days</td>
+              <td>$4,876,027</td>
+              <td class="pnl-neg">$3,929,433</td>
+              <td class="pnl-pos">$6,067,073</td>
+              <td style="color:var(--amber);font-weight:600;">48.6%</td>
+              <td>$924,396</td>
+            </tr>
+            <tr>
+              <td>180 days</td>
+              <td>$4,889,158</td>
+              <td class="pnl-neg">$3,617,056</td>
+              <td class="pnl-pos">$6,708,995</td>
+              <td style="color:var(--amber);font-weight:600;">48.2%</td>
+              <td>$1,236,773</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:12px;font-size:11px;color:var(--text-muted);line-height:1.7;">
+          P(Loss) declines slightly at longer horizons due to a small positive GBM drift (5-year historical mean). The wider 5th–95th range at 180 days reflects greater uncertainty, not greater expected loss. VaR at 180 days ($1.24M) represents the downside at risk if the current inventory were held entirely untouched for 6 months.
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 4: Stress Scenarios ────────────────────────────────────── -->
+  <section class="section" id="stress">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Stress Scenarios</div>
+        <div class="section-desc">Instantaneous price shocks based on historical crisis events and hypothetical demand collapse</div>
+      </div>
+      <span class="badge badge-live"><span class="badge-dot"></span>Live</span>
+    </div>
+
+    <div class="grid-2">
+      <div class="chart-card">
+        <div class="chart-label">Portfolio P&amp;L Impact</div>
+        <img src="output/charts/scenarios.png" alt="Stress Scenarios" />
+      </div>
+      <div class="card" style="overflow-x:auto;">
+        <div class="card-title">Scenario Breakdown by Commodity — Instantaneous P&amp;L Impact</div>
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>Steel</th>
+              <th>Aluminium</th>
+              <th>Copper</th>
+              <th>Stainless</th>
+              <th>Brass</th>
+              <th>Total P&amp;L</th>
+              <th>% Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>2008 Crisis</td>
+              <td class="pnl-neg">−$1,332K</td>
+              <td class="pnl-neg">−$647K</td>
+              <td class="pnl-neg">−$272K</td>
+              <td class="pnl-neg">−$227K</td>
+              <td class="pnl-neg">−$105K</td>
+              <td class="pnl-neg">−$2,584K</td>
+              <td class="pnl-neg">−53.2%</td>
+            </tr>
+            <tr>
+              <td>2015 China</td>
+              <td class="pnl-neg">−$1,066K</td>
+              <td class="pnl-neg">−$294K</td>
+              <td class="pnl-neg">−$147K</td>
+              <td class="pnl-neg">−$124K</td>
+              <td class="pnl-neg">−$58K</td>
+              <td class="pnl-neg">−$1,688K</td>
+              <td class="pnl-neg">−34.8%</td>
+            </tr>
+            <tr>
+              <td>2022 Rates</td>
+              <td class="pnl-neg">−$666K</td>
+              <td class="pnl-neg">−$235K</td>
+              <td class="pnl-neg">−$126K</td>
+              <td class="pnl-neg">−$124K</td>
+              <td class="pnl-neg">−$51K</td>
+              <td class="pnl-neg">−$1,202K</td>
+              <td class="pnl-neg">−24.8%</td>
+            </tr>
+            <tr>
+              <td>Demand −40%</td>
+              <td class="pnl-neg">−$1,066K</td>
+              <td class="pnl-neg">−$412K</td>
+              <td class="pnl-neg">−$168K</td>
+              <td class="pnl-neg">−$165K</td>
+              <td class="pnl-neg">−$72K</td>
+              <td class="pnl-neg">−$1,883K</td>
+              <td class="pnl-neg">−38.8%</td>
+            </tr>
+            <tr style="background:var(--green-light);">
+              <td style="color:var(--green);font-weight:600;">2021 Supercycle</td>
+              <td class="pnl-pos">+$1,865K</td>
+              <td class="pnl-pos">+$471K</td>
+              <td class="pnl-pos">+$230K</td>
+              <td class="pnl-pos">+$144K</td>
+              <td class="pnl-pos">+$91K</td>
+              <td class="pnl-pos">+$2,801K</td>
+              <td class="pnl-pos">+57.7%</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:14px;font-size:11px;color:var(--text-muted);line-height:1.7;">
+          All shocks are applied as instantaneous percentage changes to current MTM exposures. Downside shocks are calibrated to actual peak-to-trough price declines during each historical episode. The 2021 Supercycle upside reflects the post-COVID stimulus rally (HRC steel +70%, copper +55%). Steel dominates in every scenario because it represents 55% of portfolio exposure.
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 5: Price History & Distributions ──────────────────────── -->
+  <section class="section" id="prices">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Price History &amp; Return Distributions</div>
+        <div class="section-desc">5-year lookback · USD per metric tonne · Yahoo Finance / CME / LME</div>
+      </div>
+      <span class="badge badge-live"><span class="badge-dot"></span>Live</span>
+    </div>
+
+    <div class="grid-2">
+      <div class="chart-card">
+        <div class="chart-label">Spot Price History</div>
+        <img src="output/charts/price_history.png" alt="Price History" />
+      </div>
+      <div class="chart-card">
+        <div class="chart-label">Daily Return Distributions</div>
+        <img src="output/charts/return_distributions.png" alt="Return Distributions" />
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 5b: Inventory Aging ───────────────────────────────────── -->
+  <section class="section" id="aging">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Inventory Aging</div>
+        <div class="section-desc">Average and maximum days held per metal — colour-coded by holding period risk tier</div>
+      </div>
+      <span class="badge badge-live"><span class="badge-dot"></span>Live</span>
+    </div>
+
+    <div class="grid-2 mb-24">
+      <div class="chart-card col-span-2">
+        <div class="chart-label">Days Held by Metal — Average &amp; Oldest Lot</div>
+        <img src="output/charts/inventory_aging.png" alt="Inventory Aging" />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Aging Summary by Metal</div>
+      <table class="inv-table">
+        <thead>
+          <tr>
+            <th>Commodity</th>
+            <th>Avg Days Held</th>
+            <th>Oldest Lot (days)</th>
+            <th>Aging Tier</th>
+            <th>Implication</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="metal-dot dot-steel">Steel</span></td>
+            <td>260</td>
+            <td>—</td>
+            <td><span style="color:#dc2626;font-weight:600;">&#9679; Aging</span></td>
+            <td>Held significantly beyond 60-day threshold. Steel prices have risen since purchase — monitor for reversal.</td>
+          </tr>
+          <tr>
+            <td><span class="metal-dot dot-aluminium">Aluminium</span></td>
+            <td>259</td>
+            <td>—</td>
+            <td><span style="color:#dc2626;font-weight:600;">&#9679; Aging</span></td>
+            <td>Long-held position with meaningful unrealised gain (+$315K). Consider taking profits on older lots.</td>
+          </tr>
+          <tr>
+            <td><span class="metal-dot dot-brass">Brass</span></td>
+            <td>259</td>
+            <td>—</td>
+            <td><span style="color:#dc2626;font-weight:600;">&#9679; Aging</span></td>
+            <td>Small position but ageing similarly to aluminium. Low sensitivity ($13/t) reduces urgency.</td>
+          </tr>
+          <tr>
+            <td><span class="metal-dot dot-copper">Copper</span></td>
+            <td>251</td>
+            <td>—</td>
+            <td><span style="color:#dc2626;font-weight:600;">&#9679; Aging</span></td>
+            <td>High unrealised gain (+$122K) with long hold. Copper is most volatile metal in the portfolio — locking in gains is worth considering.</td>
+          </tr>
+          <tr>
+            <td><span class="metal-dot dot-stainless">Stainless</span></td>
+            <td>230</td>
+            <td>—</td>
+            <td><span style="color:#dc2626;font-weight:600;">&#9679; Aging</span></td>
+            <td>All metals in the aging tier. Average hold reflects a buy-and-hold position built over 2025–2026.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:16px;padding:14px;background:#fef2f2;border-radius:8px;font-size:12px;color:#991b1b;line-height:1.7;">
+        <strong>Concentration + Aging Risk:</strong> The entire portfolio is in the aging tier (&gt;60 days average hold). Steel — at 55% of portfolio and 260 average days — is the dominant risk. A $100/tonne decline in HRC prices would cost approximately $200,900 in MTM value. The current unrealised gain of $858K on steel gives a cushion of roughly 4× the 30-day parametric VaR for that metal alone.
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 6: Commodity Deep Dives ────────────────────────────────── -->
+  <section class="section" id="commodities">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Commodity Deep Dives</div>
+        <div class="section-desc">Individual risk outlook for each commodity — Monte Carlo, VaR, and stress scenarios</div>
+      </div>
+      <span class="badge badge-live"><span class="badge-dot"></span>Live</span>
+    </div>
+
+    <!-- Steel -->
+    <div class="card mb-24">
+      <div class="commodity-header">
+        <div class="commodity-swatch" style="background:#607080;"></div>
+        <div class="commodity-name">Steel</div>
+        <div class="commodity-sub">Book $1,806,170 · MTM $2,664,167 · 11,818 t · HRC=F reference · 54.9% of portfolio · Break-even $899/t · Sensitivity $2,009/t</div>
+      </div>
+      <div class="grid-3">
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Monte Carlo</div>
+          <img src="output/charts/monte_carlo_steel.png" alt="Steel Monte Carlo" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">95% VaR vs CVaR</div>
+          <img src="output/charts/var_summary_steel.png" alt="Steel VaR" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Stress Scenarios</div>
+          <img src="output/charts/scenarios_steel.png" alt="Steel Scenarios" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Aluminium -->
+    <div class="card mb-24">
+      <div class="commodity-header">
+        <div class="commodity-swatch" style="background:#a8a9ad;"></div>
+        <div class="commodity-name">Aluminium</div>
+        <div class="commodity-sub">Book $862,237 · MTM $1,177,018 · 968 t · ALI=F reference · 24.3% of portfolio · Break-even $2,620/t · Sensitivity $329/t</div>
+      </div>
+      <div class="grid-3">
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Monte Carlo</div>
+          <img src="output/charts/monte_carlo_aluminium.png" alt="Aluminium Monte Carlo" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">95% VaR vs CVaR</div>
+          <img src="output/charts/var_summary_aluminium.png" alt="Aluminium VaR" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Stress Scenarios</div>
+          <img src="output/charts/scenarios_aluminium.png" alt="Aluminium Scenarios" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Copper -->
+    <div class="card mb-24">
+      <div class="commodity-header">
+        <div class="commodity-swatch" style="background:#b87333;"></div>
+        <div class="commodity-name">Copper</div>
+        <div class="commodity-sub">Book $296,524 · MTM $419,010 · 95 t · HG=F (COMEX) · 8.6% of portfolio · Break-even $9,879/t · Sensitivity $30/t</div>
+      </div>
+      <div class="grid-3">
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Monte Carlo</div>
+          <img src="output/charts/monte_carlo_copper.png" alt="Copper Monte Carlo" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">95% VaR vs CVaR</div>
+          <img src="output/charts/var_summary_copper.png" alt="Copper VaR" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Stress Scenarios</div>
+          <img src="output/charts/scenarios_copper.png" alt="Copper Scenarios" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Stainless -->
+    <div class="card mb-24">
+      <div class="commodity-header">
+        <div class="commodity-swatch" style="background:#6a9ab0;"></div>
+        <div class="commodity-name">Stainless Steel</div>
+        <div class="commodity-sub">Book $300,358 · MTM $412,598 · 398 t · NI=F proxy (nickel — synthetic fallback) · 8.5% of portfolio · Break-even $15,610/t · Sensitivity $19/t</div>
+      </div>
+      <div class="grid-3">
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Monte Carlo</div>
+          <img src="output/charts/monte_carlo_stainless.png" alt="Stainless Monte Carlo" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">95% VaR vs CVaR</div>
+          <img src="output/charts/var_summary_stainless.png" alt="Stainless VaR" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Stress Scenarios</div>
+          <img src="output/charts/scenarios_stainless.png" alt="Stainless Scenarios" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Brass -->
+    <div class="card mb-24">
+      <div class="commodity-header">
+        <div class="commodity-swatch" style="background:#c9a84c;"></div>
+        <div class="commodity-name">Brass</div>
+        <div class="commodity-sub">Book $124,798 · MTM $181,037 · 36 t · HG=F proxy (copper) · 3.7% of portfolio · Break-even $9,623/t · Sensitivity $13/t</div>
+      </div>
+      <div class="grid-3">
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Monte Carlo</div>
+          <img src="output/charts/monte_carlo_brass.png" alt="Brass Monte Carlo" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">95% VaR vs CVaR</div>
+          <img src="output/charts/var_summary_brass.png" alt="Brass VaR" />
+        </div>
+        <div class="chart-card" style="border:none;padding:0;box-shadow:none;">
+          <div class="chart-label">Stress Scenarios</div>
+          <img src="output/charts/scenarios_brass.png" alt="Brass Scenarios" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 7: Sell Signals ─────────────────────────────────────────── -->
+  <section class="section" id="signals">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Sell Signal Dashboard</div>
+        <div class="section-desc">Quantitative triggers for inventory reduction based on risk thresholds</div>
+      </div>
+      <span class="badge badge-pending"><span class="badge-dot"></span>In Development</span>
+    </div>
+
+    <div class="grid-3">
+      <div class="placeholder-card">
+        <div class="placeholder-icon">📉</div>
+        <div class="placeholder-title">P(Loss) Threshold Signal</div>
+        <div class="placeholder-desc">Flag individual commodities when 30-day Monte Carlo P(loss) exceeds a configurable threshold (e.g. 60%).</div>
+      </div>
+      <div class="placeholder-card">
+        <div class="placeholder-icon">💰</div>
+        <div class="placeholder-title">Unrealised Gain Lock-In</div>
+        <div class="placeholder-desc">Trigger sell recommendation when unrealised gain on a commodity exceeds a target % of book cost.</div>
+      </div>
+      <div class="placeholder-card">
+        <div class="placeholder-icon">📊</div>
+        <div class="placeholder-title">Price Momentum Alert</div>
+        <div class="placeholder-desc">Alert when a commodity spot price falls more than X% from its rolling 30-day high, indicating a trend reversal.</div>
+      </div>
+      <div class="placeholder-card">
+        <div class="placeholder-icon">⏱️</div>
+        <div class="placeholder-title">Days-Held Aging Report</div>
+        <div class="placeholder-desc">Track how long each lot has been held. Items held beyond a threshold (e.g. 60 days) should be prioritised for sale regardless of price.</div>
+      </div>
+      <div class="placeholder-card">
+        <div class="placeholder-icon">📋</div>
+        <div class="placeholder-title">Sell-Side Transaction Log</div>
+        <div class="placeholder-desc">Requires sale transaction data to be added to the model. Will enable realised P&amp;L tracking and margin analysis per commodity.</div>
+      </div>
+      <div class="placeholder-card">
+        <div class="placeholder-icon">🔔</div>
+        <div class="placeholder-title">VaR Utilisation Limit</div>
+        <div class="placeholder-desc">If 95% VaR as a % of portfolio exceeds a defined risk budget (e.g. 15%), trigger a position reduction recommendation.</div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── Section 8: Methodology ──────────────────────────────────────────── -->
+  <section class="section" id="methodology">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Model Methodology</div>
+        <div class="section-desc">Reference guide for the assumptions, data sources, and calculations used in this report</div>
+      </div>
+      <span class="badge badge-draft"><span class="badge-dot"></span>Draft</span>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Price Data Sources</div>
+        <table class="method-table">
+          <thead><tr><th>Commodity</th><th>Ticker</th><th>Exchange</th><th>Unit</th></tr></thead>
+          <tbody>
+            <tr><td>Copper</td><td class="font-mono">HG=F</td><td>COMEX</td><td>USD/lb → $/t</td></tr>
+            <tr><td>Aluminium</td><td class="font-mono">ALI=F</td><td>COMEX</td><td>USD/tonne</td></tr>
+            <tr><td>Steel (HRC)</td><td class="font-mono">HRC=F</td><td>CME</td><td>USD/short ton → $/t</td></tr>
+            <tr><td>Stainless proxy</td><td class="font-mono">NI=F</td><td>LME</td><td>USD/tonne (synthetic fallback)</td></tr>
+            <tr><td>Brass proxy</td><td class="font-mono">HG=F</td><td>COMEX</td><td>Copper series, brass basis applied</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Risk Calculations</div>
+        <table class="method-table">
+          <thead><tr><th>Method</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>Parametric VaR</td><td>Normal distribution, constant σ over 5-year lookback, √T scaling</td></tr>
+            <tr><td>EWMA VaR</td><td>RiskMetrics λ=0.94 time-varying volatility, more sensitive to recent moves</td></tr>
+            <tr><td>Historical Sim.</td><td>Empirical return distribution, non-overlapping horizon windows</td></tr>
+            <tr><td>Monte Carlo</td><td>10,000 correlated GBM paths via Cholesky decomposition, daily σ</td></tr>
+            <tr><td>Stress Scenarios</td><td>Instantaneous % shocks calibrated to historical crisis events</td></tr>
+            <tr><td>Mark-to-Market</td><td>Spot price × grade basis factor × quantity (tonnes)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Basis Factors (Scrap vs Reference Price)</div>
+        <table class="method-table">
+          <thead><tr><th>Grade / Commodity</th><th>Basis</th><th>Derivation</th></tr></thead>
+          <tbody>
+            <tr><td>Copper Tier 1</td><td>62.5%</td><td>Avg purchase ÷ 2025 COMEX spot</td></tr>
+            <tr><td>Copper Tier 2</td><td>41.0%</td><td>Mixed ICW wire, avg purchase</td></tr>
+            <tr><td>Copper Tier 3</td><td>3.5%</td><td>Motors, starters — mostly iron</td></tr>
+            <tr><td>Aluminium</td><td>34.0%</td><td>Mixed turnings, rims, dross</td></tr>
+            <tr><td>Steel</td><td>17.0%</td><td>Scrap HMS vs HRC finished product</td></tr>
+            <tr><td>Stainless Tier 1</td><td>3.5%</td><td>304/316 scrap vs pure nickel spot</td></tr>
+            <tr><td>Stainless Tier 2</td><td>9.6%</td><td>H-13, carbide, Ti — includes exotic premium</td></tr>
+            <tr><td>Brass Tier 1</td><td>44.0%</td><td>Yellow brass vs copper spot</td></tr>
+            <tr><td>Brass Tier 2</td><td>29.0%</td><td>Breakage/dross vs copper spot</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Known Limitations &amp; Future Work</div>
+        <table class="method-table">
+          <thead><tr><th>Item</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>LME Nickel live feed (stainless proxy)</td><td>Synthetic GBM fallback in use — NI=F data unavailable via Yahoo Finance. Stainless risk metrics are model-generated, not market-derived.</td></tr>
+            <tr><td>Sell-side transaction data</td><td>Not yet ingested — only buy-side data modelled. Realised P&amp;L tracking requires sale records.</td></tr>
+            <tr><td>Holding costs (storage, labour, insurance)</td><td>Not modelled — these costs reduce true P&amp;L and should be deducted from unrealised gain.</td></tr>
+            <tr><td>Basis spread risk</td><td>Fixed basis assumed — real basis fluctuates with supply/demand and grade mix. A 5-point basis compression on copper ICW wire costs ~$58K at current exposure.</td></tr>
+            <tr><td>Zinc as independent brass driver</td><td>Brass proxied by copper only. Zinc (~30% of yellow brass alloy) is not independently modelled.</td></tr>
+            <tr><td>Adjustments column in CSV</td><td>Assumed that the "Cost" column is inclusive of adjustments. If adjustments are additive, purchase costs for some lots may be understated.</td></tr>
+            <tr><td>Seasonal demand patterns</td><td>Not incorporated. Scrap demand and pricing are seasonally affected (auto, construction cycles).</td></tr>
+            <tr><td>√T horizon scaling</td><td>Parametric and EWMA VaR use √T rule, which assumes independent daily returns. Volatility clustering in metals means this may understate multi-day VaR in crisis periods.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /container -->
+</main>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<footer class="report-footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div>BMR / MMR Scrapyard Risk Model &nbsp;·&nbsp; Generated June 9, 2026 &nbsp;·&nbsp; Refresh: <code style="font-size:11px;color:#64748b;">python run_risk_model.py --refresh</code></div>
+      <div class="footer-note">For internal use only. Prices sourced from Yahoo Finance. This report does not constitute financial advice.</div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
