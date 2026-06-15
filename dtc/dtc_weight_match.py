@@ -1,23 +1,25 @@
 """Match each DTC order to its partner inbound and outbound tickets by weight.
 
-Strategy per DTC order (uses the order's Yard Net Weight as the target):
-  Outbound side -- authoritative via the DTC `Outbound Ticket Id`:
-      find the row inside that ticket whose Net Weight == DTC net (exact). This
-      pins the material code, yard, ship date and outbound gross weight.
-  Inbound side -- weight search scoped to the matched outbound row's
-      (material code, yard) within a date window ending at the ship date:
-        1. exact single inbound ticket net == DTC net
-        2. sum of inbound ticket nets == DTC net   (consolidated/built load)
-        3. exact single inbound ticket gross == outbound gross
-        4. sum of inbound ticket grosses == outbound gross
-      (gross is tried only when net fails -- e.g. DTC truck pass-throughs.)
+DTC orders never get stored -- the truck weighs in (inbound) and the same load
+ships straight out (outbound) the same day -- so a match is one inbound ticket
+== one outbound ticket at the same weight, same day. Per DTC order:
+  Outbound side -- authoritative via the DTC `Outbound Ticket Id`: find the row
+      inside that ticket whose Net Weight == DTC net (handles mixed-material
+      trucks). This pins the material code, yard, ship date and outbound gross.
+  Inbound side -- scoped to that material code (+ the FETURN/TURNSTEEL
+      equivalence) and yard, with a global one-ticket-one-use constraint:
+        1. exact single inbound net == DTC net, same day (+/-1)
+        2. else exact single inbound gross == outbound gross, same day (+/-1)
+        3. else a single exact-net twin OUTSIDE the window -- surfaced but flagged
+  Each match is corroborated on gross weight and on inbound-supplier vs
+  outbound-consumer to assign a High/flagged confidence tier.
 
 Inbound tickets are aggregated to one figure each: net = sum of material rows,
-gross = max row gross (one truck weighs once). Output: dtc_weight_matches.csv
+gross = max row gross (one truck weighs once).
+Outputs: dtc_weight_matches.csv, dtc_match_exceptions.csv, dtc_ticket_match.png
 """
 
 import os
-from itertools import combinations
 
 import pandas as pd
 import matplotlib
@@ -28,7 +30,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 WINDOW_DAYS = 1         # DTC loads never get stored: inbound must be same day (+/-1)
-MAX_COMBO = 6           # largest inbound subset to consider for a sum match
 
 # codes that are the same physical material on the inbound side (the outbound
 # "ZZ DO NOT USE STEEL TURNINGS" / FETURN and "STEEL TURNING" / TURNSTEEL are
@@ -38,25 +39,6 @@ CODE_EQUIV = {"FETURN": {"FETURN", "TURNSTEEL"}, "TURNSTEEL": {"FETURN", "TURNST
 
 def _num(s):
     return pd.to_numeric(s.astype(str).str.replace(",", "").str.replace("$", ""), errors="coerce")
-
-
-def _subset(items, target):
-    """Return the 'best' subset (list of (ticket,wt,date)) summing to target, or None.
-    Prefers fewest tickets, then the tightest date span (most likely a real bin)."""
-    target = int(round(target))
-    pool = [(t, int(round(w)), d) for t, w, d in items if 0 < round(w) <= target]
-    # exact single handled by caller; here size >= 2
-    best = None
-    for r in range(2, min(MAX_COMBO, len(pool)) + 1):
-        for combo in combinations(pool, r):
-            if sum(w for _, w, _ in combo) == target:
-                span = (max(d for *_, d in combo) - min(d for *_, d in combo)).days
-                key = (r, span)
-                if best is None or key < best[0]:
-                    best = (key, combo)
-        if best:               # smallest r that yields any solution wins
-            break
-    return list(best[1]) if best else None
 
 
 def main():
@@ -136,23 +118,7 @@ def main():
             consumed.add(pick["tid"])
             r.update(in_method="exact net", in_match=f"#{pick['Ticket #']}", in_total=round(pick["net"]), _intid=pick["tid"])
 
-    # pass 2 - sum of nets over still-unconsumed tickets
-    for i in order:
-        r = recs[i]
-        if r["in_method"] != "NONE":
-            continue
-        c = avail(r["_cand"])
-        if c is None or not len(c):
-            continue
-        s = _subset(list(zip(c["tid"], c["net"], c["date"])), r["_W"])
-        if s:
-            for tid, *_ in s:
-                consumed.add(tid)
-            r.update(in_method="sum of nets",
-                     in_match=" + ".join(f"#{tid.split('/')[1]}({int(round(w))})" for tid, w, _ in s),
-                     in_total=sum(int(round(w)) for _, w, _ in s))
-
-    # pass 3/4 - gross fallback (exact then sum) for whatever remains
+    # pass 2 - exact single gross fallback (true pass-through: gross in == gross out)
     for i in order:
         r = recs[i]
         if r["in_method"] != "NONE" or pd.isna(r["_og"]):
@@ -164,16 +130,8 @@ def main():
         if len(exg):
             pick = exg.iloc[0]; consumed.add(pick["tid"])
             r.update(in_method="exact gross", in_match=f"#{pick['Ticket #']}", in_total=round(pick["gross"]), _intid=pick["tid"])
-            continue
-        s = _subset(list(zip(c["tid"], c["gross"], c["date"])), r["_og"])
-        if s:
-            for tid, *_ in s:
-                consumed.add(tid)
-            r.update(in_method="sum of gross",
-                     in_match=" + ".join(f"#{tid.split('/')[1]}({int(round(w))})" for tid, w, _ in s),
-                     in_total=sum(int(round(w)) for _, w, _ in s))
 
-    # pass 5 - relaxed: same material+yard but OUTSIDE the same-day window. Surface the
+    # pass 3 - relaxed: same material+yard but OUTSIDE the same-day window. Surface the
     # inbound ticket(s) so they are visible, but the order stays flagged as an exception.
     for i in order:
         r = recs[i]

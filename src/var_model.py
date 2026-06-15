@@ -51,11 +51,12 @@ def historical_var(
 ) -> tuple[float, float]:
     r = returns.dropna().values
 
-    if len(r) >= horizon:
-        n_windows = len(r) // horizon
+    # Overlapping windows: ~len(r) samples instead of len(r)//horizon, so the 99%
+    # tail is estimable. (Non-overlapping gave only ~40 windows -> 99% was a single obs.)
+    if len(r) > horizon:
         window_returns = np.array([
-            np.prod(1 + r[i * horizon: (i + 1) * horizon]) - 1
-            for i in range(n_windows)
+            np.prod(1 + r[i: i + horizon]) - 1
+            for i in range(len(r) - horizon + 1)
         ])
     else:
         window_returns = r
@@ -106,15 +107,14 @@ def portfolio_var(
         port_cvar = norm.pdf(z) / (1 - confidence) * port_sigma
     else:
         portfolio_returns = aligned @ (weights / weights.sum())
-        all_losses = -(portfolio_returns.values * weights.sum())
-        if len(all_losses) >= horizon:
-            n = len(all_losses) // horizon
+        pr = portfolio_returns.values
+        if len(pr) > horizon:                       # overlapping windows (see historical_var)
             window_losses = np.array([
-                -weights.sum() * (np.prod(1 + portfolio_returns.values[i * horizon:(i + 1) * horizon]) - 1)
-                for i in range(n)
+                -weights.sum() * (np.prod(1 + pr[i: i + horizon]) - 1)
+                for i in range(len(pr) - horizon + 1)
             ])
         else:
-            window_losses = all_losses
+            window_losses = -(pr * weights.sum())
         port_var = float(np.percentile(window_losses, confidence * 100))
         tail = window_losses[window_losses >= port_var]
         port_cvar = float(tail.mean()) if len(tail) > 0 else port_var

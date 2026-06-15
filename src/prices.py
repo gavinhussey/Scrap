@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from src.config import CACHE_DIR, LOOKBACK_YEARS, METALS
+from src.config import CACHE_DIR, LOOKBACK_YEARS, METALS, SCRAP_BASIS_VOL_MULT
 
 warnings.filterwarnings("ignore")
 
@@ -88,6 +88,31 @@ def fetch_all_prices(years: int = LOOKBACK_YEARS, force_refresh: bool = False) -
 
 def latest_price(metal: str) -> float:
     return float(fetch_prices(metal).iloc[-1])
+
+
+def vol_multiplier(metal: str) -> float:
+    """Total vol scaling for a metal's risk: basis-risk overlay x per-metal factor."""
+    return SCRAP_BASIS_VOL_MULT * METALS.get(metal, {}).get("vol_multiplier", 1.0)
+
+
+def risk_series(metal: str, base: pd.Series) -> pd.Series:
+    """Rescale a price series so its returns carry the basis-adjusted vol.
+
+    Levels are not preserved (irrelevant — VaR/MC use returns only); the spot
+    price for mark-to-market display still comes from the unscaled series.
+    """
+    k = vol_multiplier(metal)
+    if k == 1.0:
+        return base
+    log_ret = np.log(base).diff().fillna(0.0) * k
+    scaled = float(base.iloc[0]) * np.exp(log_ret.cumsum())
+    scaled.name = metal
+    return scaled
+
+
+def fetch_risk_series(years: int = LOOKBACK_YEARS, force_refresh: bool = False) -> dict[str, pd.Series]:
+    """Per-metal price series with basis-adjusted volatility, for VaR/Monte Carlo."""
+    return {m: risk_series(m, s) for m, s in fetch_all_prices(years, force_refresh).items()}
 
 
 def daily_returns(prices: pd.Series) -> pd.Series:

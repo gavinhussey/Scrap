@@ -352,6 +352,8 @@ def chart_commodity_breakdown(summary_df: pd.DataFrame) -> Path:
         "steel":     "#607080",
         "stainless": "#6a9ab0",
         "brass":     "#c9a84c",
+        "lead":      "#475569",
+        "zinc":      "#7c8f3a",
     }
 
     fig, ax = plt.subplots(figsize=(13, 5))
@@ -368,7 +370,7 @@ def chart_commodity_breakdown(summary_df: pd.DataFrame) -> Path:
     x_max = max_mtm * 1.28
     min_book = df["book_value"].min()
     if min_book / x_max < 0.05:
-        x_max = min_book / 0.05
+        x_max = max(x_max, min_book / 0.05)
     ax.set_xlim(0, x_max)
 
     for i, (_, row) in enumerate(df.iterrows()):

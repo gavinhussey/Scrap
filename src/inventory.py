@@ -3,32 +3,42 @@
 import pandas as pd
 
 from src.config import METALS
+from src.greenspark_inventory import LBS_PER_TONNE, load_greenspark_lots
 from src.positions import current_inventory
 from src.prices import latest_price
 
 last_reconciliation: dict[str, pd.DataFrame] = {}
 
 
-def load_inventory(inbound_paths=None, outbound_paths=None) -> pd.DataFrame:
-    inv, recon_grade, recon_metal, margin = current_inventory(inbound_paths, outbound_paths)
-    last_reconciliation.update(
-        recon_grade=recon_grade, recon_metal=recon_metal, margin=margin
-    )
+def load_inventory(source: str = "greenspark", inbound_paths=None, outbound_paths=None) -> pd.DataFrame:
+    """Build the current on-hand lot table.
 
-    bought = recon_metal["bought_t"].sum()
-    sold = recon_metal["sold_t"].sum()
-    on_hand = recon_metal["on_hand_t"].sum()
-    print(
-        f"  [+] Netted inventory: {bought:,.0f}t bought - {sold:,.0f}t sold "
-        f"= {on_hand:,.0f}t on hand ({len(inv)} open lots)"
-    )
-    shortfalls = recon_grade[recon_grade["shortfall_t"] > 1e-6]
-    if not shortfalls.empty:
-        print(f"  [!] {len(shortfalls)} grade(s) sold more than purchased YTD "
-              f"(floored to zero — likely opening inventory or reclassification):")
-        for _, r in shortfalls.iterrows():
-            print(f"        {r['grade']:<26} shortfall {r['shortfall_t']:>8,.1f}t")
-    return inv
+    source="greenspark" (default): physical truth from the GreenSpark snapshot.
+    source="netting": legacy buys-minus-sales FIFO (understates the book — the
+    outbound feed double-counts inter-yard transfers; kept for comparison only).
+    """
+    if source == "netting":
+        inv, recon_grade, recon_metal, margin = current_inventory(inbound_paths, outbound_paths)
+        last_reconciliation.update(recon_grade=recon_grade, recon_metal=recon_metal, margin=margin)
+        on_hand = recon_metal["on_hand_t"].sum()
+        print(f"  [+] Netted inventory: {recon_metal['bought_t'].sum():,.0f}t bought - "
+              f"{recon_metal['sold_t'].sum():,.0f}t sold = {on_hand:,.0f}t on hand ({len(inv)} lots)")
+        return inv
+
+    lots, dropped = load_greenspark_lots()
+    on_hand_t = lots["quantity_tonnes"].sum()
+    has_mkt = lots.get("market_price_per_tonne")
+    priced = int(has_mkt.notna().sum()) if has_mkt is not None else 0
+    print(f"  [+] GreenSpark inventory: {on_hand_t * LBS_PER_TONNE:,.0f} lbs "
+          f"({on_hand_t:,.0f}t) across {len(lots)} grades; "
+          f"market price matched on {priced}/{len(lots)} "
+          f"(rest fall back to futures-basis).")
+    if not dropped.empty:
+        d_lbs = dropped["quantity_tonnes"].sum() * LBS_PER_TONNE
+        print(f"  [!] Excluded {len(dropped)} non-modelled lines ({d_lbs:,.0f} lbs, "
+              f"${dropped['cost'].sum():,.0f} cost): "
+              f"{', '.join(sorted(dropped['grade'].unique()))}")
+    return lots
 
 
 def _grade_basis(metal: str, grade: str) -> float:
@@ -42,10 +52,16 @@ def mark_to_market(df: pd.DataFrame, spot_prices: dict[str, float] | None = None
 
     result = df.copy()
     result["spot_price_per_tonne"] = result["metal"].map(spot_prices)
-    result["basis_factor"] = result.apply(
-        lambda r: _grade_basis(r["metal"], r.get("grade", "default")), axis=1
+    modelled_scrap = result.apply(
+        lambda r: r["spot_price_per_tonne"] * _grade_basis(r["metal"], r.get("grade", "default")),
+        axis=1,
     )
-    result["scrap_price_per_tonne"] = result["spot_price_per_tonne"] * result["basis_factor"]
+    # Prefer real transacted sale price per grade; fall back to futures x basis haircut.
+    real = result["market_price_per_tonne"] if "market_price_per_tonne" in result else pd.Series(pd.NA, index=result.index)
+    result["scrap_price_per_tonne"] = pd.to_numeric(real, errors="coerce").fillna(modelled_scrap)
+    result["price_source"] = real.notna().map({True: "real sale", False: "futures x basis"})
+    # Effective basis is now derived from the price actually used, not a fixed guess.
+    result["basis_factor"] = result["scrap_price_per_tonne"] / result["spot_price_per_tonne"]
     result["book_value"] = result["purchase_price_per_tonne"] * result["quantity_tonnes"]
     result["mtm_value"] = result["scrap_price_per_tonne"] * result["quantity_tonnes"]
     result["unrealised_pnl"] = result["mtm_value"] - result["book_value"]
