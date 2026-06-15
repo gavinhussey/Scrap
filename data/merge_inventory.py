@@ -1,12 +1,4 @@
-"""Merge the current physical inventory reports from both yards into one file.
-
-Reads the per-yard "Inventory Report - Weights and Costs" CSVs (same columns,
-different column order) and stacks them into one tidy table with a Location
-column, one row per material per yard. This per-yard granularity is what the
-EOY-2025 backward reconstruction needs (flows are booked per yard).
-
-Output (in this script's folder): combined inventory <date>.csv
-"""
+"""Merge the current physical inventory reports from both yards into one file."""
 
 import os
 import re
@@ -14,9 +6,8 @@ import glob
 
 import pandas as pd
 
-HERE = os.path.dirname(os.path.abspath(__file__))  # inventory CSVs sit alongside this script
+HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Canonical output column order (Location first, identity, then weights, costs).
 COLS = ["Location", "Material Code", "Material Name", "Commodity Name", "Commodity Type",
         "Total Wip Weight", "Total FG Weight", "Total Net Weight",
         "Total Wip Cost", "Total FG Cost", "Total Cost", "Average Cost"]
@@ -32,7 +23,6 @@ def _location(filename: str) -> str:
 
 
 def _snapshot_date(filenames) -> str:
-    # the reports embed an as-of date like ...20260612.csv
     for f in filenames:
         m = re.search(r"(\d{8})", f)
         if m:
@@ -48,18 +38,16 @@ def main() -> None:
 
     frames = []
     for path in sorted(paths):
-        df = pd.read_csv(path, dtype=str)          # keep values verbatim
+        df = pd.read_csv(path, dtype=str)
         df.insert(0, "Location", _location(os.path.basename(path)))
         frames.append(df)
         print(f"  read {len(df):>4} rows  {_location(os.path.basename(path)):<12} <- {os.path.basename(path)}")
 
-    combined = pd.concat(frames, ignore_index=True)  # unions columns by name
-    # keep the canonical order; tolerate any unexpected extra columns by appending them
+    combined = pd.concat(frames, ignore_index=True)
     ordered = [c for c in COLS if c in combined.columns]
     extra = [c for c in combined.columns if c not in COLS]
     combined = combined[ordered + extra]
 
-    # same material from both yards sits adjacent for easy comparison
     combined = combined.sort_values(
         ["Commodity Type", "Commodity Name", "Material Name", "Location"],
         kind="stable", na_position="last").reset_index(drop=True)
@@ -67,7 +55,6 @@ def main() -> None:
     out_path = os.path.join(HERE, f"combined inventory {_snapshot_date([os.path.basename(p) for p in paths])}.csv")
     combined.to_csv(out_path, index=False)
 
-    # sanity summary: net weight on hand per location
     net = pd.to_numeric(combined["Total Net Weight"], errors="coerce")
     by_loc = net.groupby(combined["Location"]).sum()
     print(f"\n  wrote {len(combined)} rows -> {out_path}")

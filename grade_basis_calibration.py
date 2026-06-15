@@ -1,24 +1,4 @@
-"""Calibrate a per-grade price basis from real transactions.
-
-For each scrap grade we want a stable factor linking it to a tradeable benchmark:
-
-    grade $/lb  ~=  basis(grade)  x  benchmark metal $/lb
-
-so the grade can be repriced at ANY date (Dec-2025, today, forward) by moving the
-benchmark. The basis is derived empirically from our own inbound (buy) and outbound
-(sale) tickets -- not a hardcoded haircut -- and is time-aligned: each ticket's
-$/lb is divided by the benchmark's close ON THAT TICKET'S DATE.
-
-Benchmarks (yfinance, pluggable):  copper HG=F, steel HRC=F, aluminium ALI=F,
-brass -> copper. Metals with no liquid Yahoo benchmark (stainless/NI=F delisted,
-lead, zinc, other) are priced 'absolute' -- carried at their transacted $/lb.
-
-Basis ladder per grade (most trusted first):
-  sale-calibrated -> buy-calibrated x metal margin -> recovery % in name
-  -> commodity(tier) average -> metal average -> (absolute metals) last $/lb
-
-Output (output/): grade_basis_calibration.csv, grade_basis_calibration.txt
-"""
+"""Calibrate a per-grade price basis from real transactions."""
 
 import os
 import re
@@ -36,8 +16,6 @@ _BRACKET = re.compile(r"\[[^\]]*\]$")
 _TIER = re.compile(r"\s*TIER\s*\d+\s*$", re.I)
 _PCT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
-# metal -> (yfinance ticker, divisor to convert the raw close to USD/lb).
-# Metals absent here have no benchmark -> priced 'absolute' (last transacted $/lb).
 BENCH = {"COPPER": ("HG=F", 1.0), "BRASS": ("HG=F", 1.0),
          "STEEL": ("HRC=F", 2000.0), "ALUMINUM": ("ALI=F", 2204.62)}
 BASIS_HIGH_FLAG = 1.10     # scrap rarely exceeds benchmark; flag for review above this
