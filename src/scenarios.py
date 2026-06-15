@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from src.config import STRESS_SCENARIOS
+from src.config import BASIS_STRESS_POINTS, STRESS_SCENARIOS
 
 
 def run_scenarios(
@@ -47,3 +47,29 @@ def worst_case_summary(scenario_df: pd.DataFrame) -> dict:
         "best_pnl": best["total_pnl"],
         "best_pnl_pct": best["total_pnl_pct"],
     }
+
+
+def run_basis_stress(mtm_df: pd.DataFrame, points: list[float] | None = None) -> pd.DataFrame:
+    """Stress scrap/futures basis compression independently of flat price."""
+    if points is None:
+        points = BASIS_STRESS_POINTS
+
+    priced = mtm_df[mtm_df["valuation_confidence"] != "Unpriced"].copy()
+    total = float(priced["net_realizable_value"].sum())
+    rows = []
+    for p in points:
+        per_metal = {}
+        total_pnl = 0.0
+        for metal, g in priced.groupby("metal"):
+            effective_p = g["basis_factor"].clip(upper=p)
+            pnl = -float((g["spot_price_per_tonne"] * g["quantity_tonnes"] * effective_p).sum())
+            per_metal[metal] = pnl
+            total_pnl += pnl
+        rows.append({
+            "scenario": f"Basis compression -{p:.0%} pts",
+            "compression_points": p,
+            **{f"{m}_pnl": v for m, v in per_metal.items()},
+            "total_pnl": total_pnl,
+            "total_pnl_pct": (total_pnl / total * 100) if total else 0.0,
+        })
+    return pd.DataFrame(rows)

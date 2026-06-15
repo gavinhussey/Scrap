@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import glob
 from dataclasses import dataclass
 
 import numpy as np
@@ -26,7 +27,7 @@ if HERE not in sys.path:
 import dtc_ticket_match as matcher
 
 
-DTC_PATH = os.path.join(HERE, "Copy of MASTER ____ BMR-MMR Dashboard v11 - DTC_raw_data.csv")
+DTC_GLOB = os.path.join(os.path.dirname(HERE), "daily_inputs", "*DTC_raw_data*.csv")
 FULL_CANDIDATES_PATH = os.path.join(HERE, "inbound_training_candidates_full.csv")
 FEATURES_PATH = os.path.join(HERE, "inbound_training_features.csv")
 SCORED_CANDIDATES_PATH = os.path.join(HERE, "trained_inbound_scored_candidates.csv")
@@ -124,7 +125,7 @@ def build_full_candidate_set() -> pd.DataFrame:
 
 
 def build_features() -> pd.DataFrame:
-    dtc = pd.read_csv(DTC_PATH, thousands=",")
+    dtc = pd.read_csv(sorted(glob.glob(DTC_GLOB))[-1], thousands=",")
     cand = build_full_candidate_set()
     cand.to_csv(FULL_CANDIDATES_PATH, index=False)
 

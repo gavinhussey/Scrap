@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.config import COMMODITY_TO_METAL, DATA_DIR
+from src.config import COMMODITY_TO_METAL, DAILY_INPUT_DIR, DATA_DIR
 
 LBS_PER_TONNE = 2204.62
 
@@ -41,8 +41,11 @@ def parse_dates(raw: pd.Series) -> pd.Series:
 
 
 def find_inbound_csvs(directory: Path | None = None) -> list[Path]:
-    directory = directory or DATA_DIR
-    return sorted(p for p in directory.glob(_INBOUND_GLOB))
+    directory = directory or DAILY_INPUT_DIR
+    combined = sorted(directory.glob("*combined*inbound*.csv"))
+    if combined:
+        return combined
+    return sorted(p for p in directory.glob(_INBOUND_GLOB) if "combined" not in p.name.lower())
 
 
 def _read_inbound_one(path: Path | str) -> pd.DataFrame:
@@ -80,7 +83,7 @@ def load_inbound(paths: list[Path | str] | None = None) -> pd.DataFrame:
     if paths is None:
         paths = find_inbound_csvs()
     if not paths:
-        raise FileNotFoundError(f"No inbound CSV ({_INBOUND_GLOB}) found in {DATA_DIR}")
+        raise FileNotFoundError(f"No inbound CSV ({_INBOUND_GLOB}) found in {DAILY_INPUT_DIR}")
 
     frames = [_read_inbound_one(p) for p in paths]
     df = pd.concat(frames, ignore_index=True)

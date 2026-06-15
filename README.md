@@ -4,6 +4,40 @@ Analysis and matching tools for scrapyard inventory, commodity exposure, and DTC
 
 ## Main Workflows
 
+### Daily Full Refresh
+
+After uploading the latest daily files:
+
+- `daily_inputs/Milton - Inventory Report - Weights and Costs - YYYYMMDD.csv`
+- `daily_inputs/Merriville - Inventory Report - Weights and Costs - YYYYMMDD.csv`
+- `daily_inputs/2026 ytd milton inbound.csv`
+- `daily_inputs/2026 ytd merriville inbound.csv`
+- `daily_inputs/2026 ytd milton outbound.csv`
+- `daily_inputs/2026 ytd merriville outbound.csv`
+- `daily_inputs/*DTC_raw_data*.csv`
+
+run:
+
+```sh
+source .venv/bin/activate
+MPLCONFIGDIR=/private/tmp python daily_update.py
+```
+
+Useful options:
+
+```sh
+python daily_update.py --no-refresh-prices
+python daily_update.py --skip-dtc
+python daily_update.py --skip-merge-orders
+python daily_update.py --skip-merge-inventory
+```
+
+`daily_inputs/` is the only folder that needs daily upload/replacement. The
+two yard inventory reports are merged automatically into a combined inventory
+snapshot, and the four yard-level order exports are merged automatically into
+combined inbound and outbound files. The `data/` folder is for historical/static
+inputs and merge scripts.
+
 ### DTC Ticket Matching
 
 The DTC workflow links DTC order rows to inbound and outbound ticket rows using material, weight, date, customer, price, and row-level identifiers.

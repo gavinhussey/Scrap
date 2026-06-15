@@ -4,6 +4,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
+DAILY_INPUT_DIR = BASE_DIR / "daily_inputs"
 CACHE_DIR = BASE_DIR / "cache"
 OUTPUT_DIR = BASE_DIR / "output"
 CHARTS_DIR = OUTPUT_DIR / "charts"
@@ -105,6 +106,30 @@ HOLDING_PERIOD_DAYS = 30
 VAR_CONFIDENCE_LEVELS = [0.90, 0.95, 0.99]
 MONTE_CARLO_SIMULATIONS = 10_000
 EWMA_LAMBDA = 0.94
+
+# Realization haircuts applied after gross MTM. These are conservative operating
+# assumptions for freight, handling, shrink, bid/ask, and liquidation pressure.
+NET_REALIZABLE_HAIRCUTS: dict[str, float] = {
+    "copper": 0.04,
+    "aluminium": 0.06,
+    "steel": 0.08,
+    "stainless": 0.07,
+    "brass": 0.05,
+    "lead": 0.12,
+    "zinc": 0.10,
+}
+
+LIQUIDATION_HAIRCUTS: dict[str, float] = {
+    "copper": 0.10,
+    "aluminium": 0.15,
+    "steel": 0.20,
+    "stainless": 0.18,
+    "brass": 0.12,
+    "lead": 0.30,
+    "zinc": 0.25,
+}
+
+BASIS_STRESS_POINTS = [0.02, 0.05, 0.10]
 
 STRESS_SCENARIOS: dict[str, dict[str, float]] = {
     "2008 Financial Crisis": {

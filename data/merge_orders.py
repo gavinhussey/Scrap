@@ -3,7 +3,7 @@
 import re
 import pandas as pd
 
-DATA = "data"
+DATA = "daily_inputs"
 
 INBOUND = [
     (f"{DATA}/2026 ytd milton inbound.csv", "Milton"),

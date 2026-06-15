@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.config import COMMODITY_TO_METAL, DATA_DIR
+from src.config import COMMODITY_TO_METAL, DAILY_INPUT_DIR, DATA_DIR
 from src.data_loader import LBS_PER_TONNE, _parse_float, parse_dates
 
 _OUTBOUND_GLOB = "*outbound*.csv"
@@ -15,8 +15,11 @@ DEPLETING_STATUSES = {"PAID", "INVOICED", "SHIPPED"}
 
 
 def find_outbound_csvs(directory: Path | None = None) -> list[Path]:
-    directory = directory or DATA_DIR
-    return sorted(p for p in directory.glob(_OUTBOUND_GLOB))
+    directory = directory or DAILY_INPUT_DIR
+    combined = sorted(directory.glob("*combined*outbound*.csv"))
+    if combined:
+        return combined
+    return sorted(p for p in directory.glob(_OUTBOUND_GLOB) if "combined" not in p.name.lower())
 
 
 def _read_outbound_one(path: Path | str) -> pd.DataFrame:
@@ -61,7 +64,7 @@ def load_outbound(
     if paths is None:
         paths = find_outbound_csvs()
     if not paths:
-        raise FileNotFoundError(f"No outbound CSV ({_OUTBOUND_GLOB}) found in {DATA_DIR}")
+        raise FileNotFoundError(f"No outbound CSV ({_OUTBOUND_GLOB}) found in {DAILY_INPUT_DIR}")
 
     frames = [_read_outbound_one(p) for p in paths]
     df = pd.concat(frames, ignore_index=True)

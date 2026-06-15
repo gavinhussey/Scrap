@@ -17,7 +17,7 @@ from src.inventory import (
     total_exposure,
 )
 from src.monte_carlo import simulate
-from src.prices import daily_returns, fetch_all_prices, merge_exposures_by_driver
+from src.prices import daily_returns, fetch_all_prices, fetch_risk_series, merge_exposures_by_driver
 from src.report import (
     chart_aging,
     chart_commodity_breakdown,
@@ -41,6 +41,9 @@ def main(refresh: bool = False, charts: bool = True) -> None:
     print("\nFetching metal prices...")
     prices = fetch_all_prices(force_refresh=refresh)
     spot_prices = {m: float(s.iloc[-1]) for m, s in prices.items()}
+    # Risk series carry the basis-adjusted volatility (and nickel-like vol for the
+    # stainless copper-proxy); spot_prices above stay unscaled for MTM/charts.
+    risk_prices = fetch_risk_series(force_refresh=refresh)
 
     print("Building inventory...")
     inventory = load_inventory()
@@ -50,8 +53,8 @@ def main(refresh: bool = False, charts: bool = True) -> None:
     total_pnl = float(mtm["unrealised_pnl"].sum())
     exposures = exposure_by_metal(mtm)
 
-    # Build per-metal returns; proxy metals (brass) share their driver's series
-    returns_map = {m: daily_returns(prices[m]) for m in exposures}
+    # Build per-metal returns from the basis-adjusted risk series
+    returns_map = {m: daily_returns(risk_prices[m]) for m in exposures}
 
     # For VaR and Monte Carlo, collapse metals that share the same price driver
     # (e.g. brass + copper both driven by HG=F) to avoid a singular covariance matrix.
@@ -62,7 +65,7 @@ def main(refresh: bool = False, charts: bool = True) -> None:
 
     print("Running Monte Carlo simulation (4 horizons)...")
     mc_horizons = [30, 60, 90, 180]
-    mc_results = [simulate(mc_exposures, prices, horizon=h, seed=42) for h in mc_horizons]
+    mc_results = [simulate(mc_exposures, risk_prices, horizon=h, seed=42) for h in mc_horizons]
     mc = mc_results[0]
 
     print("Running stress scenarios...")
@@ -96,8 +99,7 @@ def main(refresh: bool = False, charts: bool = True) -> None:
         print("Generating per-commodity charts...")
         for metal in sorted(exposures.keys()):
             exp_single = {metal: exposures[metal]}
-            driver = METALS.get(metal, {}).get("price_proxy", metal)
-            prices_single = {metal: prices[driver].rename(metal)}
+            prices_single = {metal: risk_prices[metal]}
             returns_single = {metal: daily_returns(prices_single[metal])}
 
             var_single   = var_table(exp_single, returns_single)

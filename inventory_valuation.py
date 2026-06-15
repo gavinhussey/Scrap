@@ -22,6 +22,7 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
+DAILY = os.path.join(HERE, "daily_inputs")
 OUT = os.path.join(HERE, "output")
 _TIER = re.compile(r"\s*TIER\s*\d+\s*$", re.I)
 _BRACKET = re.compile(r"\[[^\]]*\]$")
@@ -56,7 +57,12 @@ def load_eoy2025() -> pd.DataFrame:
 
 
 def load_current() -> pd.DataFrame:
-    d = pd.read_csv(os.path.join(DATA, "combined inventory 20260612.csv"), thousands=",")
+    files = sorted(glob.glob(os.path.join(DAILY, "combined inventory *.csv")))
+    if not files:
+        files = sorted(glob.glob(os.path.join(DATA, "combined inventory *.csv")))
+    if not files:
+        raise FileNotFoundError("No daily inventory snapshot found in daily_inputs/.")
+    d = pd.read_csv(files[-1], thousands=",")
     return pd.DataFrame({
         "yard": d["Location"], "code": d["Material Code"], "name": d["Material Name"],
         "commodity": d["Commodity Name"], "metal": d["Commodity Name"].map(_metal),
@@ -69,9 +75,15 @@ def load_current() -> pd.DataFrame:
 
 def _flow_lines(pattern: str, value_col: str, date_col: str) -> pd.DataFrame:
     frames = []
-    for p in glob.glob(os.path.join(DATA, pattern)):
-        if "combined" in os.path.basename(p):
-            continue
+    search_dirs = [DAILY, DATA]
+    paths = []
+    for folder in search_dirs:
+        paths.extend(glob.glob(os.path.join(folder, pattern)))
+        if paths:
+            break
+    non_combined = [p for p in paths if "combined" not in os.path.basename(p).lower()]
+    selected = non_combined or paths
+    for p in selected:
         d = pd.read_csv(p, thousands=",")
         frames.append(pd.DataFrame({
             "code": d["Material Code"],

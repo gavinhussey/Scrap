@@ -1,25 +1,7 @@
-"""Match each DTC order to its partner inbound and outbound tickets by weight.
-
-DTC orders never get stored -- the truck weighs in (inbound) and the same load
-ships straight out (outbound) the same day -- so a match is one inbound ticket
-== one outbound ticket at the same weight, same day. Per DTC order:
-  Outbound side -- authoritative via the DTC `Outbound Ticket Id`: find the row
-      inside that ticket whose Net Weight == DTC net (handles mixed-material
-      trucks). This pins the material code, yard, ship date and outbound gross.
-  Inbound side -- scoped to that material code (+ the FETURN/TURNSTEEL
-      equivalence) and yard, with a global one-ticket-one-use constraint:
-        1. exact single inbound net == DTC net, same day (+/-1)
-        2. else exact single inbound gross == outbound gross, same day (+/-1)
-        3. else a single exact-net twin OUTSIDE the window -- surfaced but flagged
-  Each match is corroborated on gross weight and on inbound-supplier vs
-  outbound-consumer to assign a High/flagged confidence tier.
-
-Inbound tickets are aggregated to one figure each: net = sum of material rows,
-gross = max row gross (one truck weighs once).
-Outputs: dtc_weight_matches.csv, dtc_match_exceptions.csv, dtc_ticket_match.png
-"""
+"""Match each DTC order to its partner inbound and outbound tickets by weight."""
 
 import os
+from itertools import combinations
 
 import pandas as pd
 import matplotlib
@@ -29,16 +11,33 @@ import matplotlib.pyplot as plt
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-WINDOW_DAYS = 1         # DTC loads never get stored: inbound must be same day (+/-1)
+WINDOW_DAYS = 1
+MAX_COMBO = 6
 
-# codes that are the same physical material on the inbound side (the outbound
-# "ZZ DO NOT USE STEEL TURNINGS" / FETURN and "STEEL TURNING" / TURNSTEEL are
-# both steel turnings, bought under either code).
 CODE_EQUIV = {"FETURN": {"FETURN", "TURNSTEEL"}, "TURNSTEEL": {"FETURN", "TURNSTEEL"}}
 
 
 def _num(s):
     return pd.to_numeric(s.astype(str).str.replace(",", "").str.replace("$", ""), errors="coerce")
+
+
+def _subset(items, target):
+    """Return the 'best' subset (list of (ticket,wt,date)) summing to target, or None.
+    Prefers fewest tickets, then the tightest date span (most likely a real bin)."""
+    target = int(round(target))
+    pool = [(t, int(round(w)), d) for t, w, d in items if 0 < round(w) <= target]
+
+    best = None
+    for r in range(2, min(MAX_COMBO, len(pool)) + 1):
+        for combo in combinations(pool, r):
+            if sum(w for _, w, _ in combo) == target:
+                span = (max(d for *_, d in combo) - min(d for *_, d in combo)).days
+                key = (r, span)
+                if best is None or key < best[0]:
+                    best = (key, combo)
+        if best:
+            break
+    return list(best[1]) if best else None
 
 
 def main():
@@ -52,15 +51,12 @@ def main():
     inb["date"] = pd.to_datetime(inb["Effective Date"].str[:10], errors="coerce")
     out["date"] = pd.to_datetime(out["Date In"].str[:10], errors="coerce")
 
-    # one row per inbound ticket: net summed, gross = max, plus material/yard/date.
-    # tid = physical scale ticket (yard + ticket #); consumed at most once globally.
     itix = inb.groupby(["Material Code", "Location", "Ticket #"], as_index=False).agg(
         net=("net", "sum"), gross=("gross", "max"), date=("date", "min"),
         supplier=("Customer Name", "first"), vendor_class=("Vendor Class", "first"))
     itix["tid"] = itix["Location"] + "/" + itix["Ticket #"]
-    sup = itix.set_index("tid")[["gross", "supplier", "vendor_class"]]   # lookup for corroboration
+    sup = itix.set_index("tid")[["gross", "supplier", "vendor_class"]]
 
-    # ---- pass over DTC orders: outbound match + build the inbound candidate pool ----
     recs = []
     for _, o in dtc.iterrows():
         W = o["net"]
@@ -91,14 +87,13 @@ def main():
             ship = pd.Timestamp(sd)
             codes = CODE_EQUIV.get(mc, {mc})
             pool = itix[(itix["Material Code"].isin(codes)) & (itix["Location"] == yd)].copy()
-            rec["_pool"] = pool       # same material+yard, any date
+            rec["_pool"] = pool
             rec["_cand"] = pool[(pool["date"] >= ship - pd.Timedelta(days=WINDOW_DAYS)) &
                                 (pool["date"] <= ship + pd.Timedelta(days=WINDOW_DAYS))].copy()
             rec["_ship"] = ship
             rec["_og"] = pd.to_numeric(pd.Series([rec["out_gross"]]), errors="coerce").iloc[0]
         recs.append(rec)
 
-    # ---- exclusive assignment: each inbound tid used once, processed oldest load first ----
     consumed = set()
     order = sorted(range(len(recs)),
                    key=lambda i: recs[i].get("_ship", pd.Timestamp.max))
@@ -106,7 +101,6 @@ def main():
     def avail(c):
         return c[~c["tid"].isin(consumed)] if c is not None else None
 
-    # pass 1 - exact single net (the high-confidence pass-throughs), locked first
     for i in order:
         r = recs[i]; c = avail(r["_cand"])
         if c is None or not len(c):
@@ -118,7 +112,21 @@ def main():
             consumed.add(pick["tid"])
             r.update(in_method="exact net", in_match=f"#{pick['Ticket #']}", in_total=round(pick["net"]), _intid=pick["tid"])
 
-    # pass 2 - exact single gross fallback (true pass-through: gross in == gross out)
+    for i in order:
+        r = recs[i]
+        if r["in_method"] != "NONE":
+            continue
+        c = avail(r["_cand"])
+        if c is None or not len(c):
+            continue
+        s = _subset(list(zip(c["tid"], c["net"], c["date"])), r["_W"])
+        if s:
+            for tid, *_ in s:
+                consumed.add(tid)
+            r.update(in_method="sum of nets",
+                     in_match=" + ".join(f"#{tid.split('/')[1]}({int(round(w))})" for tid, w, _ in s),
+                     in_total=sum(int(round(w)) for _, w, _ in s))
+
     for i in order:
         r = recs[i]
         if r["in_method"] != "NONE" or pd.isna(r["_og"]):
@@ -130,9 +138,15 @@ def main():
         if len(exg):
             pick = exg.iloc[0]; consumed.add(pick["tid"])
             r.update(in_method="exact gross", in_match=f"#{pick['Ticket #']}", in_total=round(pick["gross"]), _intid=pick["tid"])
+            continue
+        s = _subset(list(zip(c["tid"], c["gross"], c["date"])), r["_og"])
+        if s:
+            for tid, *_ in s:
+                consumed.add(tid)
+            r.update(in_method="sum of gross",
+                     in_match=" + ".join(f"#{tid.split('/')[1]}({int(round(w))})" for tid, w, _ in s),
+                     in_total=sum(int(round(w)) for _, w, _ in s))
 
-    # pass 3 - relaxed: same material+yard but OUTSIDE the same-day window. Surface the
-    # inbound ticket(s) so they are visible, but the order stays flagged as an exception.
     for i in order:
         r = recs[i]
         if r["in_method"] != "NONE" or r.get("_pool") is None:
@@ -140,7 +154,7 @@ def main():
         p = avail(r["_pool"])
         if p is None or not len(p):
             continue
-        # only a single exact-net twin -- no cross-month summing (that reintroduces noise)
+
         ex = p[p["net"].round() == round(r["_W"])]
         if len(ex):
             ex = ex.assign(_d=(ex["date"] - r["_ship"]).abs()).sort_values("_d")
@@ -149,9 +163,6 @@ def main():
             r.update(in_method="exact net (outside same-day)", in_match=f"#{pick['Ticket #']}",
                      in_total=round(pick["net"]), _gap=gap, _intid=pick["tid"])
 
-    # ---- corroborate every match on (a) gross weight and (b) supplier vs consumer ----
-    # A true never-stored pass-through has identical net AND gross; the inbound supplier
-    # and the outbound consumer are opposite counterparties (must differ).
     for r in recs:
         r.update(in_gross="", gross_check="", supplier="", supplier_class="", supplier_check="", confidence="")
         tid = r.get("_intid")
@@ -170,8 +181,7 @@ def main():
         same = str(row["supplier"]).strip().lower() == str(r["consumer"]).strip().lower()
         r["supplier_check"] = "SUSPECT: supplier==consumer" if same else "ok (distinct counterparties)"
 
-    # classify -- exception_reason is kept even when inbound tickets are shown
-    no_twin = set(_no_inbound_twin_anywhere(dtc, inb))
+    no_twin = set(_no_inbound_twin_anywhere(dtc, inb, out))
     for r in recs:
         m = r["in_method"]
         gross_ok = r["gross_check"] == "net+gross"
@@ -181,7 +191,6 @@ def main():
             r["exception_reason"] = f"inbound ticket(s) shown but {r.get('_gap', '?')}d outside same-day (not stored = should be same day)"
         elif m != "NONE":
             r["confidence"] = "High" if (gross_ok and supp_ok) else "Low"
-            # net-only or supplier-suspect matches are surfaced as exceptions to review
             r["exception_reason"] = "" if r["confidence"] == "High" else (
                 "net matches but GROSS differs (likely coincidental weight collision)" if not gross_ok
                 else "supplier == consumer (implausible for a pass-through)")
@@ -197,7 +206,6 @@ def main():
     exc = res[res["exception_reason"] != ""].copy()
     exc.to_csv(os.path.join(HERE, "dtc_match_exceptions.csv"), index=False)
 
-    # ---- summary ----
     n = len(res)
     print(f"DTC orders: {n}\n")
     print("OUTBOUND match:")
@@ -227,7 +235,7 @@ def render_chart(res, path):
     disp["material"] = disp["material"].str.slice(0, 22)
     disp["supplier"] = disp["supplier"].fillna("").str.slice(0, 22)
     disp["gross_check"] = disp["gross_check"].fillna("").str.slice(0, 20)
-    disp["exception_reason"] = disp["exception_reason"].fillna("")   # full sentence, no truncation
+    disp["exception_reason"] = disp["exception_reason"].fillna("")
     disp["in_match"] = disp["in_match"].fillna("").str.slice(0, 22)
 
     n = len(disp)
@@ -248,11 +256,11 @@ def render_chart(res, path):
 
     for i in range(n):
         if res["in_method"].iloc[i] == "NONE":
-            color = "#f5c6c0"                       # red - no inbound found at all
+            color = "#fdecea"
         elif res["confidence"].iloc[i] == "High":
-            color = "#a8dba0"                       # medium green - net+gross+supplier corroborated
+            color = "#a8dba0"
         else:
-            color = "#d7f0cf"                       # light green - matched, technically right but flagged
+            color = "#d7f0cf"
         for j in range(len(cols)):
             tbl[(i + 1, j)].set_facecolor(color)
     for j in range(len(cols)):
@@ -264,7 +272,7 @@ def render_chart(res, path):
     plt.close(fig)
 
 
-def _no_inbound_twin_anywhere(dtc, inb):
+def _no_inbound_twin_anywhere(dtc, inb, out):
     """DTC rows whose net equals no single inbound ticket net on ANY date, either yard."""
     itix = inb.groupby(["Location", "Ticket #"], as_index=False)["net"].sum()
     nets = set(itix["net"].round())

@@ -7,6 +7,8 @@ import glob
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+PROJECT = os.path.dirname(HERE)
+INPUTS = os.path.join(PROJECT, "daily_inputs")
 
 COLS = ["Location", "Material Code", "Material Name", "Commodity Name", "Commodity Type",
         "Total Wip Weight", "Total FG Weight", "Total Net Weight",
@@ -31,10 +33,11 @@ def _snapshot_date(filenames) -> str:
 
 
 def main() -> None:
-    paths = [p for p in glob.glob(os.path.join(HERE, "*Inventory Report*.csv"))
+    os.makedirs(INPUTS, exist_ok=True)
+    paths = [p for p in glob.glob(os.path.join(INPUTS, "*Inventory Report*.csv"))
              if "combined" not in os.path.basename(p).lower()]
     if not paths:
-        raise SystemExit("No '*Inventory Report*.csv' files found in data/.")
+        raise SystemExit("No '*Inventory Report*.csv' files found in daily_inputs/.")
 
     frames = []
     for path in sorted(paths):
@@ -52,7 +55,7 @@ def main() -> None:
         ["Commodity Type", "Commodity Name", "Material Name", "Location"],
         kind="stable", na_position="last").reset_index(drop=True)
 
-    out_path = os.path.join(HERE, f"combined inventory {_snapshot_date([os.path.basename(p) for p in paths])}.csv")
+    out_path = os.path.join(INPUTS, f"combined inventory {_snapshot_date([os.path.basename(p) for p in paths])}.csv")
     combined.to_csv(out_path, index=False)
 
     net = pd.to_numeric(combined["Total Net Weight"], errors="coerce")

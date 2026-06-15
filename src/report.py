@@ -5,6 +5,9 @@ Generate the risk report: console output + matplotlib charts saved to output/cha
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 import numpy as np

@@ -16,8 +16,9 @@ import matplotlib.pyplot as plt
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(HERE)
 
-DTC_GLOB = os.path.join(HERE, "*DTC_raw_data*.csv")
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+DAILY_INPUT_DIR = os.path.join(PROJECT_ROOT, "daily_inputs")
+DTC_GLOB = os.path.join(DAILY_INPUT_DIR, "*DTC_raw_data*.csv")
+DATA_DIR = DAILY_INPUT_DIR
 OUT_DIR = HERE
 COMBINED_INBOUND = os.path.join(DATA_DIR, "2026 ytd combined inbound.csv")
 COMBINED_OUTBOUND = os.path.join(DATA_DIR, "2026 ytd combined outbound.csv")

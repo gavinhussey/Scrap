@@ -1,29 +1,4 @@
-"""Reconstruct end-of-year-2025 (opening) inventory by working backwards.
-
-Inventory is conserved over the period, so per yard and per material grade:
-
-    opening (EOY-2025) = current physical count - inbound YTD + outbound YTD
-
-Inputs (all in data/):
-  - combined inventory <date>.csv     current physical count, per material per yard
-  - 2026 ytd *inbound.csv             purchases YTD (Net Weight, lbs)
-  - 2026 ytd *outbound.csv            sales YTD     (Net Weight, lbs)
-
-Grade-level opening can go negative where material was reclassified between buy
-and sell (e.g. bought "unprepared", sold "prepared"); that nets out one level up,
-so results are also rolled up to the metal level. Weights are pounds throughout.
-
-Outputs (in output/):
-  - opening_inventory_eoy2025_by_grade.csv
-  - opening_inventory_eoy2025_by_metal.csv
-  - opening_portfolio_weights_by_grade.csv   (each item's share of the book)
-  - opening_portfolio_weights_by_metal.csv
-  - opening_inventory_reconciliation.txt
-
-Portfolio weights are VALUE-based (share of total $ value), since dollar exposure
--- not tonnage -- is what drives risk. Value uses the current Average Cost per
-grade as a $/lb proxy (2025 prices unknown); pound-share is kept as a reference.
-"""
+"""Reconstruct end-of-year-2025 (opening) inventory by working backwards."""
 
 import os
 import re
@@ -38,7 +13,7 @@ OUT = os.path.join(HERE, "output")
 _TIER = re.compile(r"\s*TIER\s*\d+\s*$", re.I)
 _BRACKET = re.compile(r"\[[^\]]*\]$")
 
-MARKET_WINDOW_DAYS = 60   # "spot" = volume-weighted transacted price over this recent window
+MARKET_WINDOW_DAYS = 60
 
 
 def _location(path: str) -> str:
@@ -100,7 +75,6 @@ def build() -> tuple[pd.DataFrame, pd.DataFrame]:
     inb = inb.rename(columns={"wt": "inbound_wt"})
     out = out.rename(columns={"wt": "outbound_wt"})
 
-    # universe of (yard, grade) seen anywhere, with best-available metadata
     meta = (pd.concat([inv[["Location", "code", "name", "commodity", "ctype"]],
                        inb_meta, out_meta], ignore_index=True)
             .dropna(subset=["code"])
@@ -113,12 +87,10 @@ def build() -> tuple[pd.DataFrame, pd.DataFrame]:
     for c in ["current_wt", "inbound_wt", "outbound_wt"]:
         df[c] = df[c].fillna(0.0)
 
-    # the backward identity
     df["opening_wt"] = df["current_wt"] - df["inbound_wt"] + df["outbound_wt"]
     df["metal"] = df["commodity"].map(_metal)
     df["flag"] = ""
     df.loc[df["opening_wt"] < -0.5, "flag"] = "NEGATIVE (reclassified or short)"
-    # rough opening value at current average cost (2025 cost basis unknown)
     df["opening_value_est"] = (df["opening_wt"].clip(lower=0) * df["avg_cost"]).round(2)
 
     by_grade = df.sort_values(["Location", "ctype", "commodity", "name"]).reset_index(drop=True)
@@ -162,8 +134,8 @@ def _vwap(df: pd.DataFrame) -> pd.Series:
 def market_prices(avg_cost_by_code: pd.Series) -> pd.DataFrame:
     """Best market $/lb per grade, with provenance. Ladder, most-trusted first:
     recent sale -> YTD sale -> YTD purchase -> current average cost."""
-    ob = _flow_lines("2026 ytd *outbound.csv", "Expected Value")   # sales
-    inb = _flow_lines("2026 ytd *inbound.csv", "Cost")             # purchases
+    ob = _flow_lines("2026 ytd *outbound.csv", "Expected Value")
+    inb = _flow_lines("2026 ytd *inbound.csv", "Cost")
     latest = max(ob["date"].max(), inb["date"].max())
     cutoff = latest - pd.Timedelta(days=MARKET_WINDOW_DAYS)
 
@@ -196,7 +168,7 @@ def portfolio_weights(by_grade: pd.DataFrame, prices: pd.DataFrame) -> tuple[pd.
              ["held_wt"].sum())
     grade = grade[grade["held_wt"] > 0].copy()
     grade = grade.merge(prices, on="code", how="left")
-    # market price always resolves (ladder ends at avg cost); guard just in case
+
     grade["price_source"] = grade["price_source"].fillna("unpriced")
     grade["market_price"] = grade["market_price"].fillna(0.0)
     grade["value_usd"] = (grade["held_wt"] * grade["market_price"]).round(2)

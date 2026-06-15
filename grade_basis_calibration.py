@@ -18,8 +18,8 @@ _PCT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
 BENCH = {"COPPER": ("HG=F", 1.0), "BRASS": ("HG=F", 1.0),
          "STEEL": ("HRC=F", 2000.0), "ALUMINUM": ("ALI=F", 2204.62)}
-BASIS_HIGH_FLAG = 1.10     # scrap rarely exceeds benchmark; flag for review above this
-MIN_TRADE_LBS = 200        # below this total weight, mark basis low-confidence
+BASIS_HIGH_FLAG = 1.10
+MIN_TRADE_LBS = 200
 
 
 def _metal(commodity: object) -> str:
@@ -86,7 +86,7 @@ def _calib(df: pd.DataFrame) -> pd.DataFrame:
     g = df.groupby("code")
     out = g.agg(value=("value", "sum"), wt=("wt", "sum"),
                 benchval=("benchval", "sum"), n=("value", "size"))
-    out["basis"] = out["value"] / out["benchval"]      # NaN where no benchmark
+    out["basis"] = out["value"] / out["benchval"]
     out["price"] = out["value"] / out["wt"]
     return out
 
@@ -102,7 +102,6 @@ def calibrate() -> tuple[pd.DataFrame, dict, dict]:
     s = _calib(_attach_bench(sale, bench))
     b = _calib(_attach_bench(buy, bench))
 
-    # metadata per code: inventory first, then flows
     inv = pd.read_csv(glob.glob(os.path.join(DATA, "combined inventory*.csv"))[-1])
     inv_meta = inv.rename(columns={"Material Code": "code", "Material Name": "name",
                                    "Commodity Name": "commodity", "Commodity Type": "ctype"})
@@ -112,10 +111,9 @@ def calibrate() -> tuple[pd.DataFrame, dict, dict]:
             .dropna(subset=["code"]).drop_duplicates("code").set_index("code"))
     meta["metal"] = meta["commodity"].map(_metal)
 
-    # per-metal buy->sale margin uplift (from grades that have both, weighted by sale lbs)
     both = s[["basis", "wt"]].join(b[["basis"]], rsuffix="_buy", how="inner").dropna()
     both = both.join(meta["metal"])
-    both = both[both["metal"].isin(BENCH)]               # only benchmarked metals have a basis
+    both = both[both["metal"].isin(BENCH)]
     uplift = {}
     for metal, gdf in both.groupby("metal"):
         sb = np.average(gdf["basis"], weights=gdf["wt"])
@@ -125,7 +123,6 @@ def calibrate() -> tuple[pd.DataFrame, dict, dict]:
     denom = np.average(both["basis_buy"], weights=both["wt"]) if len(both) else 0.0
     overall = (np.average(both["basis"], weights=both["wt"]) / denom) if denom > 0 else 1.0
 
-    # commodity- and metal-average sale basis (weighted) for thin grades
     sj = s.join(meta[["commodity", "metal"]])
     comm_avg = sj.dropna(subset=["basis"]).groupby("commodity").apply(
         lambda g: np.average(g["basis"], weights=g["wt"]), include_groups=False)
@@ -159,7 +156,7 @@ def _assemble(meta, s, b, uplift, overall, comm_avg, metal_avg, now) -> pd.DataF
             elif metal in metal_avg.index:
                 basis, source = float(metal_avg[metal]), "metal-avg"
             price_now = basis * now[metal] if pd.notna(basis) else np.nan
-        else:                                            # no benchmark -> absolute $/lb
+        else:
             if code in s.index:
                 ref_price, source, n, lbs = s.at[code, "price"], "absolute (sale)", int(s.at[code, "n"]), s.at[code, "wt"]
             elif code in b.index:
