@@ -213,7 +213,7 @@ def main():
         r["supplier_check"] = "SUSPECT: supplier==consumer" if same else "ok (distinct counterparties)"
 
     # classify -- exception_reason is kept even when inbound tickets are shown
-    no_twin = set(_no_inbound_twin_anywhere(dtc, inb, out))
+    no_twin = set(_no_inbound_twin_anywhere(dtc, inb))
     for r in recs:
         m = r["in_method"]
         gross_ok = r["gross_check"] == "net+gross"
@@ -269,16 +269,16 @@ def render_chart(res, path):
     disp["material"] = disp["material"].str.slice(0, 22)
     disp["supplier"] = disp["supplier"].fillna("").str.slice(0, 22)
     disp["gross_check"] = disp["gross_check"].fillna("").str.slice(0, 20)
-    disp["exception_reason"] = disp["exception_reason"].fillna("").str.slice(0, 44)
+    disp["exception_reason"] = disp["exception_reason"].fillna("")   # full sentence, no truncation
     disp["in_match"] = disp["in_match"].fillna("").str.slice(0, 22)
 
     n = len(disp)
-    fig, ax = plt.subplots(figsize=(19, 0.32 * n + 1.8))
+    fig, ax = plt.subplots(figsize=(24, 0.32 * n + 1.8))
     ax.axis("off")
     high = int((res["confidence"] == "High").sum())
     matched = int((res["in_method"] != "NONE").sum())
     ax.set_title(f"DTC Orders — Inbound/Outbound Matches, net+gross+supplier corroborated  "
-                 f"(green {high} High | amber {matched - high} flagged | red {n - matched} no inbound)",
+                 f"(dark-green {high} High | light-green {matched - high} matched/flagged | red {n - matched} no inbound)",
                  fontsize=13, pad=12)
 
     tbl = ax.table(cellText=disp.values, colLabels=[h for _, h in cols],
@@ -290,11 +290,11 @@ def render_chart(res, path):
 
     for i in range(n):
         if res["in_method"].iloc[i] == "NONE":
-            color = "#fdecea"                       # red - no inbound found
+            color = "#f5c6c0"                       # red - no inbound found at all
         elif res["confidence"].iloc[i] == "High":
-            color = "#e7f4e4"                       # green - net+gross+supplier corroborated
+            color = "#a8dba0"                       # medium green - net+gross+supplier corroborated
         else:
-            color = "#fff4e5"                       # amber - matched but flagged for review
+            color = "#d7f0cf"                       # light green - matched, technically right but flagged
         for j in range(len(cols)):
             tbl[(i + 1, j)].set_facecolor(color)
     for j in range(len(cols)):
@@ -306,7 +306,7 @@ def render_chart(res, path):
     plt.close(fig)
 
 
-def _no_inbound_twin_anywhere(dtc, inb, out):
+def _no_inbound_twin_anywhere(dtc, inb):
     """DTC rows whose net equals no single inbound ticket net on ANY date, either yard."""
     itix = inb.groupby(["Location", "Ticket #"], as_index=False)["net"].sum()
     nets = set(itix["net"].round())
