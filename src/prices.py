@@ -4,6 +4,7 @@ Fetch, cache, and normalise metal spot prices to USD per metric tonne.
 
 import warnings
 from datetime import datetime, timedelta
+import json
 from pathlib import Path
 
 import numpy as np
@@ -21,9 +22,40 @@ LT_PARAMS = {
     "stainless": {"mean_usd_tonne": 14_000, "annual_vol": 0.35},
 }
 
+LAST_PRICE_SOURCES: dict[str, str] = {}
+
 
 def _cache_path(metal: str) -> Path:
     return CACHE_DIR / f"{metal}_prices.csv"
+
+
+def _synthetic_cache_path(metal: str) -> Path:
+    return CACHE_DIR / f"{metal}_synthetic_prices.csv"
+
+
+def _cache_meta_path(metal: str) -> Path:
+    return CACHE_DIR / f"{metal}_prices.meta.json"
+
+
+def _read_cache(path: Path, metal: str) -> pd.Series:
+    cached = pd.read_csv(path, index_col=0, parse_dates=True).squeeze()
+    cached.name = metal
+    return cached
+
+
+def _write_cache(series: pd.Series, metal: str, source: str, ticker: str | None = None) -> None:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    series.to_csv(_cache_path(metal))
+    meta = {
+        "metal": metal,
+        "source": source,
+        "ticker": ticker,
+        "rows": int(len(series)),
+        "start": str(series.index.min().date()) if len(series) else None,
+        "end": str(series.index.max().date()) if len(series) else None,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    _cache_meta_path(metal).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
 
 def _download(metal: str, years: int) -> pd.Series | None:
@@ -59,31 +91,47 @@ def fetch_prices(metal: str, years: int = LOOKBACK_YEARS, force_refresh: bool = 
     cfg = METALS[metal]
 
     if "price_proxy" in cfg:
-        proxy_series = fetch_prices(cfg["price_proxy"], years, force_refresh)
+        proxy = cfg["price_proxy"]
+        proxy_series = fetch_prices(proxy, years, force_refresh)
+        LAST_PRICE_SOURCES[metal] = f"proxy:{proxy} ({LAST_PRICE_SOURCES.get(proxy, 'unknown')})"
         return proxy_series.rename(metal)
 
     path = _cache_path(metal)
     if not force_refresh and path.exists():
-        cached = pd.read_csv(path, index_col=0, parse_dates=True).squeeze()
+        cached = _read_cache(path, metal)
         if cached.index[-1].date() >= (datetime.today() - timedelta(days=1)).date():
-            cached.name = metal
+            LAST_PRICE_SOURCES.setdefault(metal, "cache")
             return cached
 
     series = _download(metal, years)
     if series is None or len(series) < 100:
         label = cfg.get("ticker", metal)
-        print(f"  [!] Could not download live data for {metal} ({label}) — using synthetic series")
+        if path.exists():
+            cached = _read_cache(path, metal)
+            print(f"  [!] Could not download live data for {metal} ({label}) — using stale real cache")
+            LAST_PRICE_SOURCES[metal] = "stale-cache"
+            return cached
+        print(f"  [!] Could not download live data for {metal} ({label}) — using synthetic series (not written to real cache)")
         series = _synthetic(metal, years)
+        LAST_PRICE_SOURCES[metal] = "synthetic"
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        series.to_csv(_synthetic_cache_path(metal))
+        return series
     else:
         print(f"  [+] Downloaded {len(series)} days of {metal} prices ({cfg['ticker']})")
+        LAST_PRICE_SOURCES[metal] = "yahoo"
 
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    series.to_csv(path)
+    _write_cache(series, metal, source="yahoo", ticker=cfg.get("ticker"))
     return series
 
 
 def fetch_all_prices(years: int = LOOKBACK_YEARS, force_refresh: bool = False) -> dict[str, pd.Series]:
+    LAST_PRICE_SOURCES.clear()
     return {metal: fetch_prices(metal, years, force_refresh) for metal in METALS}
+
+
+def price_source_summary() -> dict[str, str]:
+    return dict(LAST_PRICE_SOURCES)
 
 
 def latest_price(metal: str) -> float:

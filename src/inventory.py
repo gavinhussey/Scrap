@@ -11,12 +11,6 @@ last_reconciliation: dict[str, pd.DataFrame] = {}
 
 
 def load_inventory(source: str = "greenspark", inbound_paths=None, outbound_paths=None) -> pd.DataFrame:
-    """Build the current on-hand lot table.
-
-    source="greenspark" (default): physical truth from the GreenSpark snapshot.
-    source="netting": legacy buys-minus-sales FIFO (understates the book — the
-    outbound feed double-counts inter-yard transfers; kept for comparison only).
-    """
     if source == "netting":
         inv, recon_grade, recon_metal, margin = current_inventory(inbound_paths, outbound_paths)
         last_reconciliation.update(recon_grade=recon_grade, recon_metal=recon_metal, margin=margin)
@@ -61,8 +55,6 @@ def mark_to_market(
         lambda r: r["spot_price_per_tonne"] * _grade_basis(r["metal"], r.get("grade", "default")),
         axis=1,
     )
-    # Prefer real transacted sale price per grade. Missing prices are held at
-    # book by default; futures-basis fallback must be explicitly requested.
     real = result["market_price_per_tonne"] if "market_price_per_tonne" in result else pd.Series(pd.NA, index=result.index)
     result["book_value"] = result["purchase_price_per_tonne"] * result["quantity_tonnes"]
     real_price = pd.to_numeric(real, errors="coerce")
@@ -94,7 +86,15 @@ def mark_to_market(
     result["liquidation_value"] = result["mtm_value"] * (1 - result["liquidation_haircut"])
     result["net_unrealised_pnl"] = result["net_realizable_value"] - result["book_value"]
     result["liquidation_pnl"] = result["liquidation_value"] - result["book_value"]
-    result["risk_exposure_value"] = result["net_realizable_value"].where(has_real, 0.0)
+    unpriced_proxy_value = modelled_scrap * result["quantity_tonnes"] * (1 - result["net_realizable_haircut"])
+    result["risk_exposure_source"] = has_real.map({
+        True: "priced nrv",
+        False: "conservative proxy - unpriced",
+    })
+    result["risk_exposure_value"] = result["net_realizable_value"].where(
+        has_real,
+        result["net_realizable_value"].combine(unpriced_proxy_value, max),
+    )
 
     today = pd.Timestamp.today().normalize()
     result["days_held"] = (today - result["purchase_date"]).dt.days
@@ -131,7 +131,7 @@ def portfolio_summary(mtm_df: pd.DataFrame) -> pd.DataFrame:
 
     summary["avg_cost_per_tonne"] = summary["book_value"] / summary["total_tonnes"]
     summary["avg_basis"] = summary["_basis_x_tonnes"] / summary["total_tonnes"]
-    summary["breakeven_price"] = summary["avg_cost_per_tonne"] / summary["avg_basis"]
+    summary["breakeven_price"] = summary["avg_cost_per_tonne"] / summary["avg_basis"].where(summary["avg_basis"] != 0)
     summary = summary.drop(columns=["_basis_x_tonnes"])
     return summary
 

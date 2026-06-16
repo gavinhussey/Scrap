@@ -1,6 +1,4 @@
-"""
-Generate the risk report: console output + matplotlib charts saved to output/charts/.
-"""
+"""Generate the risk report: console output + matplotlib charts saved to output/charts/."""
 
 from datetime import datetime
 from pathlib import Path
@@ -156,7 +154,6 @@ def chart_price_history(prices: dict[str, pd.Series]) -> Path:
         ax.grid(axis="y", alpha=0.3)
         ax.spines[["top", "right"]].set_visible(False)
 
-        # Current price label on the right axis
         current = float(series.iloc[-1])
         ax_r = ax.twinx()
         ax_r.set_ylim(ax.get_ylim())

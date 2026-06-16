@@ -1,42 +1,31 @@
 # Price Data
 
 ## Source
-All price data is pulled from **Yahoo Finance** via the `yfinance` Python library.
+Price history is loaded through `src/prices.py`. Exchange prices are fetched with `yfinance` and cached in `cache/`.
 
-## Tickers
-| Metal | Ticker | Exchange | Raw Unit | Converted To |
-|-------|--------|----------|----------|--------------|
-| Copper | `HG=F` | COMEX (CME Group) | USD/lb | USD/tonne (× 2204.62) |
-| Aluminium | `ALI=F` | CME Group | USD/tonne | USD/tonne (no change) |
+## Run Source Labels
+Each run tracks price source quality:
+- `yahoo`: downloaded during the run
+- `cache`: loaded from local cache
+- `proxy:<metal>`: using another metal's price series
+- `synthetic`: generated fallback series because live/cache data was unavailable
 
-## Caching
-- On first run: downloads 5 years of daily closing prices, saves to `cache/copper_prices.csv` and `cache/aluminium_prices.csv`
-- On subsequent runs: uses cache if last date is yesterday or today
-- If cache is stale (older than yesterday): re-downloads automatically
-- Force refresh at any time: `python run_risk_model.py --refresh`
-- If download fails: falls back to synthetic price series so the model doesn't crash
+Synthetic data degrades model quality and should not be used for final business decisions without review.
 
-## Current Price Snapshot (as of 2026-06-09)
-| Metal | Price (USD/tonne) |
-|-------|-------------------|
-| Copper | ~$13,960 |
-| Aluminium | ~$3,576 |
+## Proxy Metals
+Some scrap categories use proxy series:
+- brass -> copper
+- stainless -> copper, with additional volatility multiplier
+- lead -> copper
+- zinc -> copper
 
-## Data Range
-- Start: June 2021
-- End: Current (updates on each run)
-- ~1,257 trading days for copper, ~1,255 for aluminium
+These proxies are pragmatic approximations and should be replaced with better market data when available.
+
+## Risk Series
+The model separates display/spot prices from risk prices. Risk prices apply the scrap basis volatility overlay before VaR and Monte Carlo calculations.
 
 ## Limitations
-- Yahoo Finance is a free, unofficial source — not suitable for regulated reporting
-- No scrap-specific prices (scrap data requires paid feeds e.g. AMM, Fastmarkets, Metal Bulletin)
-- `ALI=F` (aluminium) is less liquid than LME contracts — may have gaps or stale closes
-- Daily closes only — not suitable for intraday analysis
-- Prices available after ~4pm EST market close; runs before close use previous day's price
-
-## Upgrading the Data Source
-Only `_download()` in `src/prices.py` needs to change to swap in a different provider. The rest of the model consumes a standard pandas Series of daily USD/tonne prices.
-
-## Related Notes
-- [[Risk Model Overview]]
-- [[Inventory & Grades]]
+- Yahoo Finance is not a regulated data source.
+- Some tickers can be stale, unavailable, or revised.
+- Scrap-specific price data is not directly modeled unless realized transaction prices exist.
+- Daily closes are not suitable for intraday risk.

@@ -8,10 +8,17 @@ from pathlib import Path
 import pandas as pd
 
 from src.config import COMMODITY_TO_METAL, DAILY_INPUT_DIR, DATA_DIR
+from src.input_validation import require_columns
 
 LBS_PER_TONNE = 2204.62
 
 _INBOUND_GLOB = "*inbound*.csv"
+_INBOUND_REQUIRED = {
+    "Commodity Name",
+    "Cost",
+    "Net Weight",
+    "Effective Date",
+}
 
 
 def _parse_float(s: object) -> float:
@@ -51,6 +58,7 @@ def find_inbound_csvs(directory: Path | None = None) -> list[Path]:
 def _read_inbound_one(path: Path | str) -> pd.DataFrame:
     raw = pd.read_csv(path, dtype=str, keep_default_na=False)
     raw.columns = [c.strip() for c in raw.columns]
+    require_columns(raw, _INBOUND_REQUIRED, str(path))
 
     grade = raw["Commodity Name"].str.strip().str.upper()
     metal = grade.map(COMMODITY_TO_METAL)

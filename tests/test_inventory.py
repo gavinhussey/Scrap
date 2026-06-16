@@ -25,7 +25,8 @@ def test_missing_market_price_is_held_at_book_by_default():
     assert row["mtm_value"] == pytest.approx(1_000.0)
     assert row["unrealised_pnl"] == pytest.approx(0.0)
     assert row["sensitivity_per_dollar"] == pytest.approx(0.0)
-    assert row["risk_exposure_value"] == pytest.approx(0.0)
+    assert row["risk_exposure_source"] == "conservative proxy - unpriced"
+    assert row["risk_exposure_value"] == pytest.approx(7_920.0)
 
 
 def test_missing_market_price_can_use_explicit_futures_fallback():
@@ -50,6 +51,7 @@ def test_real_market_price_is_used_for_mtm():
     assert row["unrealised_pnl"] == pytest.approx(1_500.0)
     assert row["net_realizable_value"] == pytest.approx(2_200.0)
     assert row["liquidation_value"] == pytest.approx(1_750.0)
+    assert row["risk_exposure_source"] == "priced nrv"
     assert row["risk_exposure_value"] == pytest.approx(2_200.0)
 
 

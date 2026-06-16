@@ -1,60 +1,32 @@
 # Inventory & Grades
 
-## Inventory File
-Physical inventory is stored in `data/sample_inventory.csv`. Edit this file directly to add or update positions. The model re-reads it on every run — no restart needed.
+## Inventory Source
+The risk model uses the latest GreenSpark combined inventory snapshot, normally:
 
-## CSV Format
-```
-metal,quantity_tonnes,purchase_price_per_tonne,purchase_date,location,grade
-copper,15.5,8500,2026-05-15,Bay A,No.1 Bare Bright
-aluminium,45.0,2400,2026-05-10,Bay B,Clean Sheet
-```
+`daily_inputs/combined inventory YYYYMMDD.csv`
 
-| Column | Required | Notes |
-|--------|----------|-------|
-| metal | Yes | `copper` or `aluminium` (lowercase) |
-| quantity_tonnes | Yes | Weight in metric tonnes |
-| purchase_price_per_tonne | Yes | Cost basis — used for unrealised P&L |
-| purchase_date | Yes | Used to calculate days held |
-| location | No | Informational only |
-| grade | Yes | Must match grade names exactly (see below) |
+The snapshot is treated as the physical inventory source of truth. YTD inbound/outbound files are used for realized-margin signals, valuation support, and flow validation, not for primary inventory quantity.
 
-## Grade Basis Discounts
-Grade determines what fraction of the exchange spot price the scrap actually sells for.
+## Required Snapshot Columns
+- `Location`
+- `Material Code`
+- `Material Name`
+- `Commodity Name`
+- `Total Net Weight`
+- `Total Cost`
 
-### Copper
-| Grade | Basis | Sells At |
-|-------|-------|----------|
-| No.1 Bare Bright | 0.92 | 92% of COMEX spot |
-| No.2 Copper | 0.82 | 82% of COMEX spot |
-| default (fallback) | 0.85 | 85% of COMEX spot |
+Negative `Total Net Weight` or `Total Cost` values are rejected.
 
-### Aluminium
-| Grade | Basis | Sells At |
-|-------|-------|----------|
-| Clean Sheet | 0.82 | 82% of LME spot |
-| UBC | 0.70 | 70% of LME spot |
-| Mixed/Cast | 0.60 | 60% of LME spot |
-| default (fallback) | 0.75 | 75% of LME spot |
+## Commodity Mapping
+`Commodity Name` is mapped to modeled metal using `COMMODITY_TO_METAL` in `src/config.py`. `OTHER` and `ZWASTE` are excluded from modeled market risk and reported as dropped lines.
 
-## Mark-to-Market Formula
-```
-Scrap Price = Spot Price × Basis Factor
-MTM Value   = Scrap Price × Quantity (tonnes)
-Unrealised P&L = MTM Value - (Purchase Price × Quantity)
-```
+## Valuation Policy
+- If a grade has a usable realized market price, MTM uses that price.
+- If a grade is unpriced, MTM is held at book value.
+- Unpriced inventory still contributes to risk exposure using the higher of net-realizable book value and a futures-basis proxy value.
 
-## Important: Grade Name Matching
-Grade names must match exactly (case and spacing). A typo silently falls back to the `default` basis. For example:
-- `No.1 Bare Bright` ✓
-- `No. 1 Bare Bright` ✗ → falls back to 0.85 instead of 0.92
+## Aging
+Inventory aging is approximate. The model uses the weight-weighted average inbound date by material code when available. If no inbound date exists, it falls back to the snapshot date in the filename.
 
-To add new grades or change discounts, edit the `grade_basis` dictionaries in `src/config.py`.
-
-## Limitation
-The basis percentages are currently hardcoded estimates. For accuracy, log actual achieved sell prices against spot on each transaction and calculate real basis from trade history.
-
-## Related Notes
-- [[Risk Model Overview]]
-- [[Price Data]]
-- [[How to Use This for Business Decisions]]
+## Assumptions
+Grade basis, haircuts, proxy metals, and unpriced-risk treatment are documented in `ASSUMPTIONS` in `src/config.py` and shown in the HTML report.

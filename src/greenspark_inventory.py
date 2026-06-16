@@ -1,16 +1,4 @@
-"""Loads current on-hand inventory straight from the GreenSpark snapshot.
-
-This replaces the flow-netting in ``positions.py`` as the inventory source for the
-risk model. Netting (buys - sales YTD) collapsed the book to ~48t because outbound
-tickets include inter-yard transfers that were never booked as purchases, so the
-backward identity breaks. The GreenSpark "combined inventory" export is the physical
-truth: weight and Total Cost per grade per yard, with zero inventory variance.
-
-Each grade line becomes one lot in the shape ``mark_to_market`` expects. Real per-grade
-market prices (from our own transacted sales, via ``inventory_valuation.py``) are merged
-in from ``output/valuation_today_by_grade.csv`` when present, so mark-to-market uses
-actual sale prices instead of the hardcoded futures-basis haircuts.
-"""
+"""Loads current on-hand inventory straight from the GreenSpark snapshot."""
 
 from __future__ import annotations
 
@@ -19,21 +7,25 @@ import re
 import pandas as pd
 
 from src.config import COMMODITY_TO_METAL, DAILY_INPUT_DIR, DATA_DIR, OUTPUT_DIR
+from src.input_validation import file_provenance, require_columns, require_nonnegative, validate_greenspark_snapshot
 
 LBS_PER_TONNE = 2204.62
 _SNAPSHOT_GLOB = "combined inventory *.csv"
 _VALUATION_CSV = "valuation_today_by_grade.csv"
 _BRACKET = re.compile(r"\[[^\]]*\]$")
+_SNAPSHOT_REQUIRED = {
+    "Location",
+    "Material Code",
+    "Material Name",
+    "Commodity Name",
+    "Total Net Weight",
+    "Total Cost",
+}
+LAST_SNAPSHOT_VALIDATION_WARNINGS: list[str] = []
+LAST_SNAPSHOT_PROVENANCE: dict[str, str | int | None] = {}
 
 
 def _inbound_avg_date_by_code() -> pd.Series | None:
-    """Weight-weighted mean inbound (purchase) date per material code, from tickets.
-
-    Gives a real (approximate) acquisition-age estimate to replace the snapshot-date
-    placeholder. It is the mean over all 2026 purchases of a code, so it slightly
-    overstates age vs strict FIFO (on-hand = the most recent lots); transfer-only
-    grades with no inbound fall back to the snapshot date.
-    """
     dirs = [DAILY_INPUT_DIR, DATA_DIR]
     paths: list = []
     for d in dirs:
@@ -56,7 +48,6 @@ def _inbound_avg_date_by_code() -> pd.Series | None:
         }))
     f = pd.concat(frames, ignore_index=True).dropna(subset=["code", "wt", "dt"])
     f = f[f["wt"] > 0]
-    # Weight float-days from a fixed reference (ns * wt overflows int64).
     ref = pd.Timestamp("2025-01-01")
     f["days"] = (f["dt"] - ref).dt.total_seconds() / 86400.0
     f["wd"] = f["days"] * f["wt"]
@@ -88,20 +79,23 @@ def _market_price_per_tonne_by_code() -> pd.Series | None:
         return None
     v = pd.read_csv(path)
     v["code"] = v["code"].astype(str)
-    price = pd.to_numeric(v["price"], errors="coerce")          # $/lb, identical per code across yards
+    price = pd.to_numeric(v["price"], errors="coerce")
     s = (price * LBS_PER_TONNE).groupby(v["code"]).first()
     return s[s > 0]
 
 
 def load_greenspark_lots() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return (modelled lots, dropped lines) from the latest GreenSpark snapshot.
-
-    Dropped lines are grades whose commodity has no metal in the risk model
-    (OTHER / ZWASTE) — returned so the caller can report what is excluded rather
-    than silently losing it.
-    """
     path = _latest_snapshot()
     raw = pd.read_csv(path, thousands=",")
+    require_columns(raw, _SNAPSHOT_REQUIRED, str(path))
+    require_nonnegative(raw["Total Net Weight"], f"{path} Total Net Weight")
+    require_nonnegative(raw["Total Cost"], f"{path} Total Cost")
+    LAST_SNAPSHOT_VALIDATION_WARNINGS.clear()
+    LAST_SNAPSHOT_VALIDATION_WARNINGS.extend(
+        validate_greenspark_snapshot(raw, path, COMMODITY_TO_METAL)
+    )
+    LAST_SNAPSHOT_PROVENANCE.clear()
+    LAST_SNAPSHOT_PROVENANCE.update(file_provenance(path))
     grade = raw["Commodity Name"].astype(str).str.strip().str.upper()
 
     df = pd.DataFrame({
@@ -130,3 +124,11 @@ def load_greenspark_lots() -> tuple[pd.DataFrame, pd.DataFrame]:
     dropped = df[df["metal"].isna()].copy()
     lots = df[df["metal"].notna()].drop(columns=["cost"]).reset_index(drop=True)
     return lots, dropped
+
+
+def snapshot_validation_warnings() -> list[str]:
+    return list(LAST_SNAPSHOT_VALIDATION_WARNINGS)
+
+
+def snapshot_provenance() -> dict[str, str | int | None]:
+    return dict(LAST_SNAPSHOT_PROVENANCE)

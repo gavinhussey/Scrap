@@ -2,28 +2,23 @@
 
 from __future__ import annotations
 
+import argparse
 import html
+import json
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
 from src import config
+from src.charting import render_risk_charts
 from src.flow_validation import build_flow_validation, economic_reconciliation
-from src.inventory import (
-    exposure_by_metal,
-    load_inventory,
-    mark_to_market,
-    portfolio_summary,
-    total_exposure,
-)
-from src.monte_carlo import simulate
-from src.prices import daily_returns, fetch_all_prices, merge_exposures_by_driver
-from src.scenarios import run_basis_stress, run_scenarios, worst_case_summary
-from src.var_model import var_table
+from src.risk_engine import build_market_risk
+from src.scenarios import run_basis_stress
 
 
 OUT = Path("risk_report.html")
+RUN_SUMMARY = config.OUTPUT_DIR / "last_risk_run.json"
 
 
 COLORS = {
@@ -85,45 +80,116 @@ def chart(path: str, label: str) -> str:
     """
 
 
-def build_html(refresh: bool = False) -> str:
-    prices = fetch_all_prices(force_refresh=refresh)
-    spot_prices = {m: float(s.iloc[-1]) for m, s in prices.items()}
+def action_guidance(status: str) -> str:
+    if status == "do_not_use":
+        return "Do not use for final decisions until synthetic prices or fatal data-quality issues are resolved."
+    if status == "degraded":
+        return "Use directionally only; review model-quality warnings before relying on VaR, Monte Carlo, or stress results."
+    if status == "review":
+        return "Usable with review; check concentration, proxies, and unpriced inventory before decisions."
+    return "No blocking model-quality warnings for this run."
 
-    inventory = load_inventory()
-    mtm = mark_to_market(inventory, spot_prices)
+
+def _run_summary(results, var95, total_book: float, total_mtm: float, total_risk_exposure: float) -> dict:
+    return {
+        "generated_at": datetime.today().isoformat(timespec="seconds"),
+        "model_status": results.model_status,
+        "total_book": total_book,
+        "total_mtm": total_mtm,
+        "total_risk_exposure": total_risk_exposure,
+        "var_95_parametric": float(var95["portfolio_var"]),
+        "priced_tonnes_pct": results.data_quality_metrics["priced_tonnes_pct"],
+        "unpriced_risk_exposure": results.data_quality_metrics["unpriced_risk_exposure"],
+    }
+
+
+def _load_previous_summary() -> dict | None:
+    if not RUN_SUMMARY.exists():
+        return None
+    try:
+        return json.loads(RUN_SUMMARY.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _summary_rows(current: dict, previous: dict | None) -> str:
+    if previous is None:
+        return '<tr><td colspan="4">No prior run summary found.</td></tr>'
+    labels = [
+        ("Model status", "model_status", None),
+        ("Total MTM", "total_mtm", usd),
+        ("Risk exposure", "total_risk_exposure", usd),
+        ("95% Parametric VaR", "var_95_parametric", usd),
+        ("Priced coverage", "priced_tonnes_pct", lambda v: f"{v:.1%}"),
+        ("Unpriced risk exposure", "unpriced_risk_exposure", usd),
+    ]
+    rows = ""
+    for label, key, fmt in labels:
+        cur = current.get(key)
+        prev = previous.get(key)
+        if fmt is None:
+            cur_text = esc(cur)
+            prev_text = esc(prev)
+            delta = ""
+        else:
+            cur_text = fmt(float(cur))
+            prev_text = fmt(float(prev))
+            delta = fmt(float(cur) - float(prev))
+        rows += f"<tr><td>{esc(label)}</td><td>{prev_text}</td><td>{cur_text}</td><td>{delta}</td></tr>"
+    return rows
+
+
+def build_html(
+    refresh: bool = False,
+    regenerate_charts: bool = True,
+    allow_synthetic: bool = True,
+    update_run_summary: bool = False,
+) -> str:
+    results = build_market_risk(refresh=refresh, allow_synthetic=allow_synthetic)
+    if regenerate_charts:
+        render_risk_charts(results)
+    inventory = results.inventory
+    mtm = results.mtm
     flow_validation, margin_by_metal = build_flow_validation(inventory)
     econ = economic_reconciliation(mtm, margin_by_metal)
-    summary = portfolio_summary(mtm).sort_values("mtm_value", ascending=False)
-    total_mtm = total_exposure(mtm)
+    summary = results.summary.sort_values("mtm_value", ascending=False)
+    total_mtm = results.total_mtm
     total_net_realizable = float(mtm["net_realizable_value"].sum())
     total_liquidation = float(mtm["liquidation_value"].sum())
     total_risk_exposure = float(mtm["risk_exposure_value"].sum())
     total_book = float(mtm["book_value"].sum())
-    total_pnl = float(mtm["unrealised_pnl"].sum())
+    total_pnl = results.total_pnl
     total_net_pnl = float(mtm["net_unrealised_pnl"].sum())
     total_tonnes = float(summary["total_tonnes"].sum())
-    exposures = exposure_by_metal(mtm)
-
-    returns_map = {m: daily_returns(prices[m]) for m in exposures}
-    mc_exposures, mc_returns = merge_exposures_by_driver(exposures, returns_map)
-    var_df = var_table(mc_exposures, mc_returns)
-    horizons = [30, 60, 90, 180]
-    mc_results = [simulate(mc_exposures, prices, horizon=h, seed=42) for h in horizons]
-    mc = mc_results[0]
-    scenario_df = run_scenarios(exposures)
+    var_df = results.var_df
+    horizons = results.horizons
+    mc_results = results.mc_results
+    mc = results.mc
+    scenario_df = results.scenario_df
     basis_df = run_basis_stress(mtm)
-    ws = worst_case_summary(scenario_df)
+    ws = results.worst_case
 
     report_dt = datetime.today()
     report_date_long = report_dt.strftime("%B %-d, %Y")
     report_date_iso = report_dt.strftime("%Y-%m-%d")
 
     var95 = var_df[(var_df["confidence"] == "95%") & (var_df["method"] == "Parametric")].iloc[0]
+    current_run_summary = _run_summary(results, var95, total_book, total_mtm, total_risk_exposure)
+    previous_run_summary = _load_previous_summary()
+    comparison_rows = _summary_rows(current_run_summary, previous_run_summary)
+    if update_run_summary:
+        config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        RUN_SUMMARY.write_text(json.dumps(current_run_summary, indent=2) + "\n", encoding="utf-8")
     pnl_pct = total_pnl / total_book * 100 if total_book else 0
     priced_mtm = float(mtm.loc[mtm["valuation_confidence"] != "Unpriced", "mtm_value"].sum())
     priced_tonnes = float(mtm.loc[mtm["valuation_confidence"] != "Unpriced", "quantity_tonnes"].sum())
     unpriced = mtm[mtm["valuation_confidence"] == "Unpriced"].copy()
     unpriced_tonnes = float(unpriced["quantity_tonnes"].sum())
+    metrics = results.data_quality_metrics
+    warning_rows = "".join(f"<tr><td>{esc(w)}</td></tr>" for w in results.model_warnings)
+    if not warning_rows:
+        warning_rows = "<tr><td>No model-quality warnings for this run.</td></tr>"
+    decision_guidance = action_guidance(results.model_status)
 
     inv_rows = ""
     for _, r in summary.iterrows():
@@ -162,6 +228,7 @@ def build_html(refresh: bool = False) -> str:
             tonnes=("quantity_tonnes", "sum"),
             book_value=("book_value", "sum"),
             mtm_value=("mtm_value", "sum"),
+            risk_exposure_value=("risk_exposure_value", "sum"),
             unrealised_pnl=("unrealised_pnl", "sum"),
             sensitivity_per_dollar=("sensitivity_per_dollar", "sum"),
         )
@@ -177,6 +244,7 @@ def build_html(refresh: bool = False) -> str:
           <td>{r['tonnes']:,.1f}</td>
           <td>{usd(r['book_value'])}</td>
           <td>{usd(r['mtm_value'])}</td>
+          <td>{usd(r['risk_exposure_value'])}</td>
           <td class="{cls(r['unrealised_pnl'])}">{usd(r['unrealised_pnl'], signed=True)}</td>
           <td>{r['sensitivity_per_dollar']:,.1f}</td>
         </tr>
@@ -184,7 +252,7 @@ def build_html(refresh: bool = False) -> str:
 
     unpriced_rows = ""
     if unpriced.empty:
-        unpriced_rows = '<tr><td colspan="7">No unpriced modelled inventory.</td></tr>'
+        unpriced_rows = '<tr><td colspan="8">No unpriced modelled inventory.</td></tr>'
     else:
         for _, r in unpriced.sort_values("quantity_tonnes", ascending=False).iterrows():
             unpriced_rows += f"""
@@ -195,9 +263,20 @@ def build_html(refresh: bool = False) -> str:
               <td>{r['quantity_tonnes']:,.1f}</td>
               <td>{usd(r['book_value'])}</td>
               <td>{usd(r['mtm_value'])}</td>
+              <td>{usd(r['risk_exposure_value'])}</td>
               <td>{esc(r['price_source'])}</td>
             </tr>
             """
+
+    provenance = results.input_provenance
+    provenance_rows = ""
+    for label, key in [
+        ("Input file", "filename"),
+        ("Rows", "rows"),
+        ("Snapshot date", "snapshot_date"),
+        ("SHA-256", "sha256"),
+    ]:
+        provenance_rows += f"<tr><td>{esc(label)}</td><td><code>{esc(provenance.get(key, 'unknown'))}</code></td></tr>"
 
     flow_rows = ""
     for _, r in flow_validation.iterrows():
@@ -328,7 +407,21 @@ def build_html(refresh: bool = False) -> str:
     sources = ""
     for metal, cfg in config.METALS.items():
         ticker = cfg.get("ticker", f"Proxy: {cfg.get('price_proxy')}")
-        sources += f"<tr><td>{esc(metal.capitalize())}</td><td><code>{esc(ticker)}</code></td><td>{esc('Yahoo Finance' if 'ticker' in cfg else 'Proxy series')}</td></tr>"
+        source = results.price_sources.get(metal, "unknown")
+        sources += f"<tr><td>{esc(metal.capitalize())}</td><td><code>{esc(ticker)}</code></td><td>{esc(source)}</td></tr>"
+
+    assumption_rows = ""
+    for name, detail in config.ASSUMPTIONS.items():
+        assumption_rows += f"""
+        <tr>
+          <td>{esc(name.replace('_', ' ').title())}</td>
+          <td>{esc(detail['value'])}</td>
+          <td>{esc(detail['source'])}</td>
+          <td>{esc(detail['confidence'])}</td>
+          <td>{esc(detail['last_reviewed'])}</td>
+          <td>{esc(detail['rationale'])}</td>
+        </tr>
+        """
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -408,15 +501,21 @@ def build_html(refresh: bool = False) -> str:
     </div>
   </header>
   <nav><div class="container">
-    <a href="#overview">Portfolio</a><a href="#validation">Inventory Validation</a><a href="#valuation">Valuation Quality</a><a href="#realization">Realization</a><a href="#var">VaR</a><a href="#mc">Monte Carlo</a><a href="#stress">Stress</a><a href="#prices">Prices</a><a href="#commodities">Commodities</a><a href="#method">Methodology</a>
+    <a href="#overview">Portfolio</a><a href="#model-quality">Model Quality</a><a href="#run-comparison">Run Comparison</a><a href="#validation">Inventory Validation</a><a href="#valuation">Valuation Quality</a><a href="#realization">Realization</a><a href="#var">VaR</a><a href="#mc">Monte Carlo</a><a href="#stress">Stress</a><a href="#prices">Prices</a><a href="#commodities">Commodities</a><a href="#method">Methodology</a>
   </div></nav>
-  <div class="notice"><div class="container">Generated {report_date_iso} from refreshed Yahoo Finance market data and current GreenSpark inventory. Charts were regenerated by <code>python run_risk_model.py --refresh</code>.</div></div>
+  <div class="notice"><div class="container">Generated {report_date_iso} from current GreenSpark inventory. Price inputs may be live, cached, proxied, or synthetic; see Price Data Sources.</div></div>
   <main><div class="container">
     <div class="kpis">
       <div class="card kpi"><div class="label">Gross MTM Value</div><div class="value">{usd(total_mtm)}</div><div class="delta">{len(summary)} commodities · {total_tonnes:,.1f} tonnes held</div></div>
       <div class="card kpi"><div class="label">Net Realizable Value</div><div class="value">{usd(total_net_realizable)}</div><div class="delta">{usd(total_net_pnl, signed=True)} net unrealized P&L vs book</div></div>
       <div class="card kpi"><div class="label">95% VaR - 30 Day</div><div class="value warn">{usd(var95['portfolio_var'])}</div><div class="delta">{var95['portfolio_var'] / total_risk_exposure:.1%} of saleable risk exposure · Parametric</div></div>
-      <div class="card kpi"><div class="label">Priced Inventory Coverage</div><div class="value">{priced_tonnes / total_tonnes:.1%}</div><div class="delta">{priced_tonnes:,.1f} priced tonnes · {unpriced_tonnes:,.1f} unpriced tonnes</div></div>
+      <div class="card kpi"><div class="label">Model Status</div><div class="value {('warn' if results.model_status != 'ok' else 'pos')}">{esc(results.model_status.title())}</div><div class="delta">{priced_tonnes / total_tonnes:.1%} priced tonnes · {unpriced_tonnes:,.1f} unpriced tonnes</div></div>
+    </div>
+    <div class="kpis">
+      <div class="card kpi"><div class="label">Priced Coverage</div><div class="value">{metrics['priced_tonnes_pct']:.1%}</div><div class="delta">Share of modelled tonnes with usable market price</div></div>
+      <div class="card kpi"><div class="label">Unpriced Risk</div><div class="value">{usd(metrics['unpriced_risk_exposure'])}</div><div class="delta">Included via conservative proxy</div></div>
+      <div class="card kpi"><div class="label">Largest Metal</div><div class="value">{metrics['max_metal_exposure_pct']:.1%}</div><div class="delta">Concentration as % of risk exposure</div></div>
+      <div class="card kpi"><div class="label">Validation Warnings</div><div class="value">{len(results.validation_warnings)}</div><div class="delta">Inventory snapshot checks</div></div>
     </div>
 
     <section id="overview">
@@ -429,6 +528,19 @@ def build_html(refresh: bool = False) -> str:
         {chart("output/charts/commodity_breakdown.png", "MTM Value by Commodity")}
         {chart("output/charts/inventory_aging.png", "Inventory Aging")}
       </div>
+    </section>
+    <section id="model-quality">
+      <div class="section-head"><div><h2>Model Quality</h2><div class="desc">Warnings that affect interpretation of VaR, Monte Carlo, valuation, or stress outputs.</div></div></div>
+      <div class="grid">
+        <div class="card span2"><div class="card-title">Decision Guidance</div><p class="desc">{esc(decision_guidance)}</p></div>
+        <div class="card">{table(warning_rows, "<tr><th>Warning</th></tr>")}</div>
+        <div class="card"><div class="card-title">Input Provenance</div>{table(provenance_rows, "<tr><th>Field</th><th>Value</th></tr>")}</div>
+      </div>
+    </section>
+
+    <section id="run-comparison">
+      <div class="section-head"><div><h2>Run Comparison</h2><div class="desc">Current report compared with the previous generated report summary.</div></div></div>
+      <div class="card span2">{table(comparison_rows, "<tr><th>Metric</th><th>Previous</th><th>Current</th><th>Change</th></tr>")}</div>
     </section>
 
     <section id="validation">
@@ -451,11 +563,11 @@ def build_html(refresh: bool = False) -> str:
       <div class="grid">
         <div class="card">
           <div class="card-title">MTM by Valuation Confidence</div>
-          {table(quality_rows, "<tr><th>Quality</th><th>Source</th><th>Rows</th><th>Qty (t)</th><th>Book Value</th><th>MTM Value</th><th>Unr. P&L</th><th>$/t Sens.</th></tr>")}
+          {table(quality_rows, "<tr><th>Quality</th><th>Source</th><th>Rows</th><th>Qty (t)</th><th>Book Value</th><th>MTM Value</th><th>Risk Exposure</th><th>Unr. P&L</th><th>$/t Sens.</th></tr>")}
         </div>
         <div class="card">
           <div class="card-title">Unpriced Modelled Inventory</div>
-          {table(unpriced_rows, "<tr><th>Commodity</th><th>Code</th><th>Material</th><th>Qty (t)</th><th>Book Value</th><th>MTM Value</th><th>Status</th></tr>")}
+          {table(unpriced_rows, "<tr><th>Commodity</th><th>Code</th><th>Material</th><th>Qty (t)</th><th>Book Value</th><th>MTM Value</th><th>Risk Exposure</th><th>Status</th></tr>")}
         </div>
       </div>
     </section>
@@ -520,7 +632,7 @@ def build_html(refresh: bool = False) -> str:
     <section id="method">
       <div class="section-head"><div><h2>Methodology</h2><div class="desc">Data sources and modelling conventions used in this report.</div></div></div>
       <div class="grid">
-        <div class="card"><div class="card-title">Price Data Sources</div>{table(sources, "<tr><th>Commodity</th><th>Ticker / Proxy</th><th>Source</th></tr>")}</div>
+        <div class="card"><div class="card-title">Price Data Sources</div>{table(sources, "<tr><th>Commodity</th><th>Ticker / Proxy</th><th>Run Source</th></tr>")}</div>
         <div class="card"><div class="card-title">Risk Calculations</div>
           <table><tbody>
             <tr><td>Parametric VaR</td><td>Normal distribution, 5-year daily volatility, square-root horizon scaling.</td></tr>
@@ -529,11 +641,12 @@ def build_html(refresh: bool = False) -> str:
             <tr><td>Monte Carlo</td><td>{config.MONTE_CARLO_SIMULATIONS:,} correlated GBM paths, zero-drift VaR convention.</td></tr>
             <tr><td>Mark-to-Market</td><td>Real matched market price per grade where available; unpriced modelled rows are held at book unless futures fallback is explicitly enabled.</td></tr>
             <tr><td>Net Realizable Value</td><td>Gross MTM less metal-specific operating haircuts for freight, handling, shrink, and bid/ask. Liquidation value applies wider forced-sale haircuts.</td></tr>
-            <tr><td>Risk Exposure</td><td>VaR, Monte Carlo, and stress scenarios use net realizable saleable exposure, excluding unpriced rows until a usable market price exists.</td></tr>
+            <tr><td>Risk Exposure</td><td>VaR, Monte Carlo, and stress scenarios use net realizable saleable exposure. Unpriced rows are held at book for MTM but included in risk through a conservative proxy.</td></tr>
             <tr><td>Basis Stress</td><td>Basis compression applies independent percentage-point reductions to scrap basis, capped at each row's current basis.</td></tr>
             <tr><td>Valuation Quality</td><td>A = real matched sale price. Unpriced = no usable market price, held at book, zero unrealized gain and zero price sensitivity.</td></tr>
           </tbody></table>
         </div>
+        <div class="card span2"><div class="card-title">Model Assumptions</div>{table(assumption_rows, "<tr><th>Assumption</th><th>Value</th><th>Source</th><th>Confidence</th><th>Reviewed</th><th>Rationale</th></tr>")}</div>
       </div>
     </section>
   </div></main>
@@ -544,7 +657,23 @@ def build_html(refresh: bool = False) -> str:
 
 
 def main() -> None:
-    OUT.write_text(build_html(refresh=False), encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Generate HTML risk report")
+    parser.add_argument("--refresh", action="store_true", help="Force re-download of price data")
+    parser.add_argument(
+        "--fail-on-synthetic",
+        action="store_true",
+        help="Fail instead of writing the report if synthetic price data is required.",
+    )
+    args = parser.parse_args()
+    OUT.write_text(
+        build_html(
+            refresh=args.refresh,
+            regenerate_charts=True,
+            allow_synthetic=not args.fail_on_synthetic,
+            update_run_summary=True,
+        ),
+        encoding="utf-8",
+    )
     print(f"Wrote {OUT}")
 
 

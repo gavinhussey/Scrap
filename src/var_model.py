@@ -1,6 +1,4 @@
-"""
-Value at Risk and Expected Shortfall (CVaR) calculations.
-"""
+"""Value at Risk and Expected Shortfall (CVaR) calculations."""
 
 import numpy as np
 import pandas as pd
@@ -21,6 +19,8 @@ def parametric_var(
     horizon: int = HOLDING_PERIOD_DAYS,
 ) -> tuple[float, float]:
     sigma_daily = float(returns.std())
+    if exposure <= 0 or not np.isfinite(sigma_daily):
+        return 0.0, 0.0
     z = norm.ppf(confidence)
     var_1d = exposure * sigma_daily * z
     var_nh = _scale_to_horizon(var_1d, horizon)
@@ -35,7 +35,11 @@ def ewma_var(
     horizon: int = HOLDING_PERIOD_DAYS,
     lam: float = EWMA_LAMBDA,
 ) -> tuple[float, float]:
+    if exposure <= 0 or returns.dropna().empty:
+        return 0.0, 0.0
     sigma_daily = ewma_volatility(returns, lam)
+    if not np.isfinite(sigma_daily):
+        return 0.0, 0.0
     z = norm.ppf(confidence)
     var_1d = exposure * sigma_daily * z
     var_nh = _scale_to_horizon(var_1d, horizon)
@@ -50,9 +54,9 @@ def historical_var(
     horizon: int = HOLDING_PERIOD_DAYS,
 ) -> tuple[float, float]:
     r = returns.dropna().values
+    if exposure <= 0 or len(r) == 0:
+        return 0.0, 0.0
 
-    # Overlapping windows: ~len(r) samples instead of len(r)//horizon, so the 99%
-    # tail is estimable. (Non-overlapping gave only ~40 windows -> 99% was a single obs.)
     if len(r) > horizon:
         window_returns = np.array([
             np.prod(1 + r[i: i + horizon]) - 1
@@ -76,7 +80,18 @@ def portfolio_var(
     method: str = "historical",
 ) -> dict:
     metals = list(exposures.keys())
+    total_exposure = float(sum(exposures.values()))
+    if not metals or total_exposure <= 0:
+        return {"per_metal": {}, "portfolio_var": 0.0, "portfolio_cvar": 0.0, "diversification_benefit": 0.0}
+
     aligned = pd.DataFrame({m: returns_map[m] for m in metals}).dropna()
+    if aligned.empty:
+        return {
+            "per_metal": {m: {"var": 0.0, "cvar": 0.0} for m in metals},
+            "portfolio_var": 0.0,
+            "portfolio_cvar": 0.0,
+            "diversification_benefit": 0.0,
+        }
 
     per_metal: dict[str, dict] = {}
     for metal in metals:
@@ -106,15 +121,15 @@ def portfolio_var(
         port_var = z * port_sigma
         port_cvar = norm.pdf(z) / (1 - confidence) * port_sigma
     else:
-        portfolio_returns = aligned @ (weights / weights.sum())
+        portfolio_returns = aligned @ (weights / total_exposure)
         pr = portfolio_returns.values
-        if len(pr) > horizon:                       # overlapping windows (see historical_var)
+        if len(pr) > horizon:
             window_losses = np.array([
-                -weights.sum() * (np.prod(1 + pr[i: i + horizon]) - 1)
+                    -total_exposure * (np.prod(1 + pr[i: i + horizon]) - 1)
                 for i in range(len(pr) - horizon + 1)
             ])
         else:
-            window_losses = -(pr * weights.sum())
+            window_losses = -(pr * total_exposure)
         port_var = float(np.percentile(window_losses, confidence * 100))
         tail = window_losses[window_losses >= port_var]
         port_cvar = float(tail.mean()) if len(tail) > 0 else port_var

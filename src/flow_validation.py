@@ -11,7 +11,6 @@ from src.positions import current_inventory
 
 def build_flow_validation(snapshot_inventory: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return metal-level flow validation and realized-margin summaries.
-
     The GreenSpark snapshot remains the physical inventory source. This summary
     exists to expose whether YTD inbound/outbound flow files reconcile cleanly or
     contain opening-balance/transfer effects that make netting unreliable.

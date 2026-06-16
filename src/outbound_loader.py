@@ -8,8 +8,14 @@ import pandas as pd
 
 from src.config import COMMODITY_TO_METAL, DAILY_INPUT_DIR, DATA_DIR
 from src.data_loader import LBS_PER_TONNE, _parse_float, parse_dates
+from src.input_validation import require_columns
 
 _OUTBOUND_GLOB = "*outbound*.csv"
+_OUTBOUND_REQUIRED = {
+    "Commodity Name",
+    "Date In",
+    "Net Weight",
+}
 
 DEPLETING_STATUSES = {"PAID", "INVOICED", "SHIPPED"}
 
@@ -25,6 +31,7 @@ def find_outbound_csvs(directory: Path | None = None) -> list[Path]:
 def _read_outbound_one(path: Path | str) -> pd.DataFrame:
     raw = pd.read_csv(path, dtype=str, keep_default_na=False)
     raw.columns = [c.strip() for c in raw.columns]
+    require_columns(raw, _OUTBOUND_REQUIRED, str(path))
 
     grade = raw["Commodity Name"].str.strip().str.upper()
     metal = grade.map(COMMODITY_TO_METAL)

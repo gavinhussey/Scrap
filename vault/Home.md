@@ -11,6 +11,7 @@ Welcome to the Scrapyard Project vault.
 - [[Monte Carlo]] — how to read the simulation chart, current results
 - [[Stress Scenarios]] — historical crash scenarios and P&L impact
 - [[How to Use This for Business Decisions]] — cash reserves, sell triggers, expansion, hedging
+- [[Risk Model Review Backlog]] — issues, missing pieces, assumptions, and future fixes
 
 ## About
 

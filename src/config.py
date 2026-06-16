@@ -42,11 +42,6 @@ METALS: dict = {
         },
     },
     "stainless": {
-        # NI=F (nickel) is delisted on Yahoo, so the old config fell back to a
-        # SYNTHETIC, independent random walk -> stainless showed ~0 correlation to
-        # every real metal and injected fake diversification. Proxy to copper for
-        # real base-metals co-movement; vol_multiplier lifts it to nickel-like vol
-        # (nickel ~1.4x copper historically).
         "price_proxy": "copper",
         "vol_multiplier": 1.15,
         "grade_basis": {
@@ -63,8 +58,6 @@ METALS: dict = {
             "default":      0.36,
         },
     },
-    # Lead/zinc have no free live future; proxy to copper so they carry base-metals
-    # risk instead of being dropped (was ~1.5% of the book at zero modelled risk).
     "lead": {
         "price_proxy": "copper",
         "grade_basis": {"default": 0.45},
@@ -75,14 +68,8 @@ METALS: dict = {
     },
 }
 
-# Basis-risk overlay: scrap prices are more volatile than the underlying futures
-# (the scrap/futures basis widens in selloffs). Six months of mix-varying tickets
-# can't estimate this cleanly, so apply a transparent, conservative multiplier to
-# every metal's flat-price vol used in VaR/MC. Documented assumption, not measured.
 SCRAP_BASIS_VOL_MULT = 1.25
 
-# VaR convention: simulate with zero drift rather than embedding the 5y realized
-# (bull-market) mean, which optimistically lifted the loss distribution.
 MC_ZERO_DRIFT = True
 
 COMMODITY_TO_METAL: dict[str, str | None] = {
@@ -107,8 +94,6 @@ VAR_CONFIDENCE_LEVELS = [0.90, 0.95, 0.99]
 MONTE_CARLO_SIMULATIONS = 10_000
 EWMA_LAMBDA = 0.94
 
-# Realization haircuts applied after gross MTM. These are conservative operating
-# assumptions for freight, handling, shrink, bid/ask, and liquidation pressure.
 NET_REALIZABLE_HAIRCUTS: dict[str, float] = {
     "copper": 0.04,
     "aluminium": 0.06,
@@ -176,5 +161,52 @@ STRESS_SCENARIOS: dict[str, dict[str, float]] = {
         "brass":     +0.50,
         "lead":      +0.45,
         "zinc":      +0.50,
+    },
+}
+
+ASSUMPTIONS: dict[str, dict[str, str]] = {
+    "scrap_basis_vol_multiplier": {
+        "value": str(SCRAP_BASIS_VOL_MULT),
+        "source": "management/model overlay",
+        "confidence": "low",
+        "last_reviewed": "2026-06-16",
+        "rationale": "Scrap prices can move more sharply than exchange futures when basis widens in selloffs.",
+    },
+    "net_realizable_haircuts": {
+        "value": ", ".join(f"{k}={v:.0%}" for k, v in NET_REALIZABLE_HAIRCUTS.items()),
+        "source": "management estimate",
+        "confidence": "medium-low",
+        "last_reviewed": "2026-06-16",
+        "rationale": "Approximates freight, handling, shrink, bid/ask, and normal sale friction.",
+    },
+    "liquidation_haircuts": {
+        "value": ", ".join(f"{k}={v:.0%}" for k, v in LIQUIDATION_HAIRCUTS.items()),
+        "source": "management estimate",
+        "confidence": "medium-low",
+        "last_reviewed": "2026-06-16",
+        "rationale": "Approximates forced-sale discount by metal.",
+    },
+    "proxy_metals": {
+        "value": ", ".join(
+            f"{metal}->{cfg['price_proxy']}" for metal, cfg in METALS.items() if "price_proxy" in cfg
+        ),
+        "source": "free price-data availability",
+        "confidence": "low",
+        "last_reviewed": "2026-06-16",
+        "rationale": "Used where no reliable free exchange ticker is available for the scrap category.",
+    },
+    "stress_scenarios": {
+        "value": ", ".join(STRESS_SCENARIOS.keys()),
+        "source": "model-defined historical/hypothetical shocks",
+        "confidence": "medium-low",
+        "last_reviewed": "2026-06-16",
+        "rationale": "Applies deterministic commodity shocks to current risk exposure.",
+    },
+    "unpriced_inventory_risk_proxy": {
+        "value": "max(net realizable book value, futures-basis proxy value)",
+        "source": "conservative model policy",
+        "confidence": "medium",
+        "last_reviewed": "2026-06-16",
+        "rationale": "Unpriced rows are held at book for MTM but still included in risk exposure using the higher conservative risk value.",
     },
 }

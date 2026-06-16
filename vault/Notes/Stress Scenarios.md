@@ -1,34 +1,21 @@
 # Stress Scenarios
 
 ## What They Do
-Apply an instantaneous % price shock to the current portfolio to show what a historical or hypothetical crisis would cost. Unlike VaR and Monte Carlo (which are probabilistic), stress scenarios are deterministic — they answer "what if X happened today?"
+Stress scenarios apply deterministic price shocks to current risk exposure. They answer: "What would this portfolio lose if this shock happened now?"
 
-## Current Results (~$964K portfolio)
-| Scenario | Copper Shock | Aluminium Shock | Total P&L | % Change |
-|----------|-------------|-----------------|-----------|----------|
-| 2008 Financial Crisis | -65% | -55% | -$594K | -61.6% |
-| Demand Collapse (-40%) | -40% | -35% | -$369K | -38.3% |
-| 2015 China Slowdown | -35% | -25% | -$304K | -31.6% |
-| 2022 Rate Shock | -30% | -20% | -$256K | -26.6% |
-| Supply Spike (+40%) | +40% | +35% | +$369K | +38.3% |
+## Current Scenario Types
+- Historical-style commodity crashes
+- Demand collapse
+- Supercycle rally
+- Basis compression stress
 
-## Key Takeaway
-A 2008-style crash would wipe out **61.6% of the portfolio value**. If this exceeds the company's equity base, they cannot afford to hold current inventory levels without hedging or additional capital.
+## Important Detail
+Stress scenarios use current risk exposure, not gross book value. Unpriced inventory is included through the conservative risk proxy.
 
-## Adding or Changing Scenarios
-Edit the `STRESS_SCENARIOS` dictionary in `src/config.py`:
-```python
-STRESS_SCENARIOS = {
-    "My Scenario": {"copper": -0.25, "aluminium": -0.20},
-}
-```
+## Limitations
+- Scenario shocks are hard-coded assumptions in `src/config.py`.
+- They are not full macroeconomic simulations.
+- They do not include credit, operational, environmental, or liquidity failures except through configured realization haircuts.
 
-## How to Use for Business Decisions
-- **Position limits**: If the worst-case scenario loss would exceed equity, inventory is too high
-- **Expansion planning**: Scale the worst-case loss proportionally to evaluate how much equity is needed at 2× or 3× current inventory
-- **Hedging trigger**: If a 2008-style scenario is a real concern, use LME futures to hedge a portion of inventory
-
-## Related Notes
-- [[Risk Model Overview]]
-- [[VaR and CVaR]]
-- [[How to Use This for Business Decisions]]
+## Maintenance
+Review scenario shocks periodically and document the source, rationale, confidence, and review date in `ASSUMPTIONS`.
