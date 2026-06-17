@@ -3,6 +3,7 @@
 import os
 from itertools import combinations
 
+import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
@@ -15,6 +16,10 @@ WINDOW_DAYS = 1
 MAX_COMBO = 6
 
 CODE_EQUIV = {"FETURN": {"FETURN", "TURNSTEEL"}, "TURNSTEEL": {"FETURN", "TURNSTEEL"}}
+
+# DTC material name -> BMR Transport roster material name. The deprecated "ZZ DO NOT
+# USE" aluminum codes (breakage / turnings) are one aluminum family in the roster.
+ROSTER_ALIAS = {"ZZ DO NOT USE ALUMINUM BREAKAGE": "ZZ DO NOT USE - ALUMINUM TURNINGS"}
 
 
 def _num(s):
@@ -40,45 +45,67 @@ def _subset(items, target):
     return list(best[1]) if best else None
 
 
+def _load_transport_roster(path):
+    """BMR Transport pivot -> (valid materials, valid supplier companies, material->companies).
+
+    The pivot lists every (material, supplier company) combination that actually
+    moves as DTC. A material or company absent from it cannot be a DTC order, so it
+    doubles as a validity filter and, for genuine missing legs, names the supplier
+    companies worth chasing in GreenSpark."""
+    df = pd.read_csv(path, header=1, dtype=str)
+    df.columns = [c.strip() for c in df.columns]
+    meta = {"Carrier Name", "Material Name", "Grand Total"}
+    companies = [c for c in df.columns if c not in meta]
+    df = df[df["Material Name"].notna() & (df["Material Name"].str.strip() != "")]
+    df = df[df["Material Name"].str.strip() != "Grand Total"]
+    df["_mat"] = df["Material Name"].str.strip().str.upper()
+    mat_to_co = {}
+    for _, row in df.iterrows():
+        cos = {c for c in companies if pd.notna(row[c]) and str(row[c]).strip() not in ("", "0")}
+        mat_to_co.setdefault(row["_mat"], set()).update(cos)
+    return set(df["_mat"]), {c.strip().upper() for c in companies}, mat_to_co
+
+
 def main():
-    dtc = pd.read_csv(os.path.join(HERE, "Copy of MASTER ____ BMR-MMR Dashboard v11 - DTC_raw_data.csv"), dtype=str)
-    inb = pd.read_csv(os.path.join(ROOT, "data", "2026 ytd combined inbound.csv"), dtype=str)
-    out = pd.read_csv(os.path.join(ROOT, "data", "2026 ytd combined outbound.csv"), dtype=str)
+    dtc = pd.read_csv(os.path.join(ROOT, "daily_inputs", "Copy of MASTER ____ BMR-MMR Dashboard v11 - DTC_raw_data.csv"), dtype=str)
+    inb = pd.read_csv(os.path.join(ROOT, "daily_inputs", "2026 ytd combined inbound.csv"), dtype=str)
+    out = pd.read_csv(os.path.join(ROOT, "daily_inputs", "2026 ytd combined outbound.csv"), dtype=str)
+    valid_mats, valid_companies, mat_to_co = _load_transport_roster(
+        os.path.join(HERE, "BMR_Transport_Data.csv"))
 
     dtc["net"] = _num(dtc["Yard Net Weight"])
-    inb["net"] = _num(inb["Net Weight"]); inb["gross"] = _num(inb["Gross Weight"])
-    out["net"] = _num(out["Net Weight"]); out["gross"] = _num(out["Gross Weight"])
+    inb["net"] = _num(inb["Net Weight"])
+    out["net"] = _num(out["Net Weight"])
     inb["date"] = pd.to_datetime(inb["Effective Date"].str[:10], errors="coerce")
     out["date"] = pd.to_datetime(out["Date In"].str[:10], errors="coerce")
 
     itix = inb.groupby(["Material Code", "Location", "Ticket #"], as_index=False).agg(
-        net=("net", "sum"), gross=("gross", "max"), date=("date", "min"),
+        net=("net", "sum"), date=("date", "min"),
         supplier=("Customer Name", "first"), vendor_class=("Vendor Class", "first"))
     itix["tid"] = itix["Location"] + "/" + itix["Ticket #"]
-    sup = itix.set_index("tid")[["gross", "supplier", "vendor_class"]]
+    sup = itix.set_index("tid")[["supplier", "vendor_class"]]
 
     recs = []
     for _, o in dtc.iterrows():
         W = o["net"]
         tkt = o["Outbound Ticket Id"]
         rec = dict(dtc_row=o["DTC Row Id"], outbound_ticket=tkt, material=o["Material Name"],
-                   dtc_net=W, out_method="", out_match="", out_gross="",
+                   dtc_net=W, out_method="", out_match="",
                    mat_code="", yard="", ship_date="",
                    in_method="NONE", in_match="", in_total="", consumer=o["Customer Name"],
-                   _W=W, _cand=None, _og=None, _intid=None)
+                   _W=W, _cand=None, _intid=None)
 
         ot = out[out["Outbound Ticket #"] == tkt]
         hit = ot[ot["net"] == W]
         if len(hit):
             r = hit.iloc[0]
             rec.update(out_method="exact net (linked ticket)", out_match=tkt,
-                       out_gross=r["gross"], mat_code=r["Material Code"],
+                       mat_code=r["Material Code"],
                        yard=r["Location"], ship_date=str(r["date"].date()) if pd.notna(r["date"]) else "")
         elif len(ot):
             rec.update(out_method="ticket found, net mismatch", out_match=tkt,
                        mat_code=ot.iloc[0]["Material Code"], yard=ot.iloc[0]["Location"],
-                       ship_date=str(ot.iloc[0]["date"].date()) if pd.notna(ot.iloc[0]["date"]) else "",
-                       out_gross=ot["gross"].max())
+                       ship_date=str(ot.iloc[0]["date"].date()) if pd.notna(ot.iloc[0]["date"]) else "")
         else:
             rec.update(out_method="ticket NOT in outbound file")
 
@@ -91,7 +118,6 @@ def main():
             rec["_cand"] = pool[(pool["date"] >= ship - pd.Timedelta(days=WINDOW_DAYS)) &
                                 (pool["date"] <= ship + pd.Timedelta(days=WINDOW_DAYS))].copy()
             rec["_ship"] = ship
-            rec["_og"] = pd.to_numeric(pd.Series([rec["out_gross"]]), errors="coerce").iloc[0]
         recs.append(rec)
 
     consumed = set()
@@ -129,26 +155,6 @@ def main():
 
     for i in order:
         r = recs[i]
-        if r["in_method"] != "NONE" or pd.isna(r["_og"]):
-            continue
-        c = avail(r["_cand"])
-        if c is None or not len(c):
-            continue
-        exg = c[c["gross"].round() == round(r["_og"])]
-        if len(exg):
-            pick = exg.iloc[0]; consumed.add(pick["tid"])
-            r.update(in_method="exact gross", in_match=f"#{pick['Ticket #']}", in_total=round(pick["gross"]), _intid=pick["tid"])
-            continue
-        s = _subset(list(zip(c["tid"], c["gross"], c["date"])), r["_og"])
-        if s:
-            for tid, *_ in s:
-                consumed.add(tid)
-            r.update(in_method="sum of gross",
-                     in_match=" + ".join(f"#{tid.split('/')[1]}({int(round(w))})" for tid, w, _ in s),
-                     in_total=sum(int(round(w)) for _, w, _ in s))
-
-    for i in order:
-        r = recs[i]
         if r["in_method"] != "NONE" or r.get("_pool") is None:
             continue
         p = avail(r["_pool"])
@@ -159,23 +165,18 @@ def main():
         if len(ex):
             ex = ex.assign(_d=(ex["date"] - r["_ship"]).abs()).sort_values("_d")
             pick = ex.iloc[0]; consumed.add(pick["tid"])
-            gap = (pick["date"] - r["_ship"]).days
+            gap = int(np.busday_count(r["_ship"].date(), pick["date"].date()))
             r.update(in_method="exact net (outside same-day)", in_match=f"#{pick['Ticket #']}",
                      in_total=round(pick["net"]), _gap=gap, _intid=pick["tid"])
 
     for r in recs:
-        r.update(in_gross="", gross_check="", supplier="", supplier_class="", supplier_check="", confidence="")
+        r.update(supplier="", supplier_class="", supplier_check="", confidence="")
         tid = r.get("_intid")
         if tid is None or tid not in sup.index:
             continue
         row = sup.loc[tid]
         if isinstance(row, pd.DataFrame):
             row = row.iloc[0]
-        ig, og = row["gross"], r["_og"]
-        r["in_gross"] = int(round(ig)) if pd.notna(ig) else ""
-        r["gross_check"] = ("net+gross" if pd.notna(ig) and pd.notna(og) and round(ig) == round(og)
-                            else f"NET ONLY (gross {int(round(ig))} vs out {int(round(og))})" if pd.notna(ig) and pd.notna(og)
-                            else "gross n/a")
         r["supplier"] = row["supplier"]
         r["supplier_class"] = row["vendor_class"]
         same = str(row["supplier"]).strip().lower() == str(r["consumer"]).strip().lower()
@@ -184,16 +185,14 @@ def main():
     no_twin = set(_no_inbound_twin_anywhere(dtc, inb, out))
     for r in recs:
         m = r["in_method"]
-        gross_ok = r["gross_check"] == "net+gross"
         supp_ok = r["supplier_check"].startswith("ok")
-        if "outside same-day" in m:
-            r["confidence"] = "Medium" if gross_ok else "Low"
-            r["exception_reason"] = f"inbound ticket(s) shown but {r.get('_gap', '?')}d outside same-day (not stored = should be same day)"
+        if "outside same-day" in m and abs(r.get("_gap", 0)) > 2:
+            r["confidence"] = "Medium" if supp_ok else "Low"
+            r["exception_reason"] = f"inbound ticket {r.get('_gap', '?')} business days outside same-day (not stored = should be same day)"
         elif m != "NONE":
-            r["confidence"] = "High" if (gross_ok and supp_ok) else "Low"
+            r["confidence"] = "High" if supp_ok else "Low"
             r["exception_reason"] = "" if r["confidence"] == "High" else (
-                "net matches but GROSS differs (likely coincidental weight collision)" if not gross_ok
-                else "supplier == consumer (implausible for a pass-through)")
+                "supplier == consumer (implausible for a pass-through)")
         elif r["out_method"] == "ticket NOT in outbound file":
             r["exception_reason"] = "outbound ticket missing from outbound file"
         elif r["dtc_row"] in no_twin:
@@ -201,10 +200,27 @@ def main():
         else:
             r["exception_reason"] = "net twin exists only under a different material/yard (coincidental)"
 
+    # BMR Transport roster filter: a material absent from the roster cannot be a DTC
+    # order at all (drop it from the chase); for genuine missing legs whose material IS
+    # in the roster, name the supplier companies that ship it so they can be chased.
+    for r in recs:
+        mat = str(r["material"]).strip().upper()
+        mat = ROSTER_ALIAS.get(mat, mat)
+        in_roster = mat in valid_mats
+        r["roster_ok"] = "Y" if in_roster else "N"
+        r["chase_suppliers"] = ""
+        if not in_roster:
+            if r["in_method"] == "NONE":
+                r["exception_reason"] = "material not in BMR Transport roster - cannot be a DTC order (drop)"
+                r["confidence"] = "n/a (not DTC)"
+        elif r["in_method"] == "NONE":
+            r["chase_suppliers"] = "; ".join(sorted(mat_to_co.get(mat, set())))
+
     res = pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in recs])
-    res.to_csv(os.path.join(HERE, "dtc_weight_matches.csv"), index=False)
+    out_cols = [c for c in res.columns if c != "confidence"]
+    res[out_cols].to_csv(os.path.join(HERE, "dtc_weight_matches.csv"), index=False)
     exc = res[res["exception_reason"] != ""].copy()
-    exc.to_csv(os.path.join(HERE, "dtc_match_exceptions.csv"), index=False)
+    exc[out_cols].to_csv(os.path.join(HERE, "dtc_match_exceptions.csv"), index=False)
 
     n = len(res)
     print(f"DTC orders: {n}\n")
@@ -212,29 +228,39 @@ def main():
     print(res["out_method"].value_counts().to_string(), "\n")
     high = (res["confidence"] == "High").sum()
     matched = (res["in_method"] != "NONE").sum()
-    print("CONFIDENCE (net+gross corroborated, supplier != consumer):")
-    print(f"  High (net+gross+supplier ok)      : {high}")
+    print("CONFIDENCE (net match, supplier != consumer):")
+    print(f"  High (net+supplier ok)            : {high}")
     print(f"  matched but flagged for review    : {matched - high}")
     print(f"  no inbound found                  : {n - matched}")
     print("\nException reasons:")
     print(exc["exception_reason"].value_counts().to_string())
-    print("\nExceptions to chase:")
-    print(exc[["dtc_row", "outbound_ticket", "material", "dtc_net", "yard", "ship_date", "exception_reason"]].to_string(index=False))
+
+    dropped = res["roster_ok"].eq("N").sum()
+    chase = res[res["exception_reason"].str.startswith("no inbound ticket of this net")]
+    print(f"\nBMR Transport roster filter:")
+    print(f"  dropped (material not in roster, not a DTC order): {dropped}")
+    print(f"  genuine missing inbound legs to chase (in roster): {len(chase)}")
+    print("\nMissing inbound legs to chase (with candidate suppliers from roster):")
+    print(chase[["dtc_row", "outbound_ticket", "material", "dtc_net", "yard",
+                 "ship_date", "chase_suppliers"]].to_string(index=False))
     render_chart(res, os.path.join(HERE, "dtc_ticket_match.png"))
     print(f"\n-> wrote dtc/dtc_weight_matches.csv, dtc/dtc_match_exceptions.csv, dtc/dtc_ticket_match.png")
 
 
 def render_chart(res, path):
-    """Color-coded table image: green = High (net+gross+supplier), amber = flagged, red = none."""
+    """Color-coded table image: green = High (net+supplier), amber = flagged, red = none."""
     cols = [("dtc_row", "DTC\nRow"), ("material", "Material"), ("dtc_net", "DTC\nNet"),
             ("outbound_ticket", "OB\nTicket"), ("yard", "Yard"), ("ship_date", "Ship\nDate"),
-            ("in_match", "Inbound\nTicket(s)"), ("gross_check", "Gross\nCheck"),
-            ("supplier", "Inbound Supplier"), ("confidence", "Conf"),
+            ("in_match", "Inbound\nTicket(s)"),
+            ("supplier", "Inbound Supplier"),
             ("exception_reason", "Exception / Note")]
     disp = res[[c for c, _ in cols]].copy()
     disp["material"] = disp["material"].str.slice(0, 22)
     disp["supplier"] = disp["supplier"].fillna("").str.slice(0, 22)
-    disp["gross_check"] = disp["gross_check"].fillna("").str.slice(0, 20)
+    # For genuine missing legs (no inbound supplier), show the roster's candidate
+    # suppliers to chase instead of an empty cell.
+    chase_mask = (res["in_method"] == "NONE") & (res["chase_suppliers"].fillna("") != "")
+    disp.loc[chase_mask, "supplier"] = "chase: " + res.loc[chase_mask, "chase_suppliers"].str.slice(0, 40)
     disp["exception_reason"] = disp["exception_reason"].fillna("")
     disp["in_match"] = disp["in_match"].fillna("").str.slice(0, 22)
 
@@ -243,7 +269,7 @@ def render_chart(res, path):
     ax.axis("off")
     high = int((res["confidence"] == "High").sum())
     matched = int((res["in_method"] != "NONE").sum())
-    ax.set_title(f"DTC Orders — Inbound/Outbound Matches, net+gross+supplier corroborated  "
+    ax.set_title(f"DTC Orders — Inbound/Outbound Matches, net+supplier corroborated  "
                  f"(dark-green {high} High | light-green {matched - high} matched/flagged | red {n - matched} no inbound)",
                  fontsize=13, pad=12)
 
@@ -256,7 +282,7 @@ def render_chart(res, path):
 
     for i in range(n):
         if res["in_method"].iloc[i] == "NONE":
-            color = "#fdecea"
+            color = "#f5b7b1"
         elif res["confidence"].iloc[i] == "High":
             color = "#a8dba0"
         else:
