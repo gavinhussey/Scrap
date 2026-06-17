@@ -40,32 +40,29 @@ inputs and merge scripts.
 
 ### DTC Ticket Matching
 
-The DTC workflow links DTC order rows to inbound and outbound ticket rows using material, weight, date, customer, price, and row-level identifiers.
+The DTC workflow links each DTC order to its partner inbound and outbound tickets by weight, treating DTC as a same-day pass-through (one ticket in = one ticket out, exact net). Outbound links authoritatively via the DTC `Outbound Ticket Id`; the inbound leg is matched same-day (within 2 business days). Matches are corroborated by supplier vs consumer and filtered/annotated against the BMR Transport roster.
+
+Inputs are read from `daily_inputs/` (combined inbound/outbound plus the DTC raw export).
 
 Key files:
 
-- `dtc/dtc_ticket_match.py` - main DTC matching pipeline.
-- `dtc/train_outbound_model.py` - outbound model training using deterministic `Outbound Ticket Id` labels.
-- `dtc/train_inbound_model.py` - inbound weak-supervision model training from strict pseudo-labels.
-- `data/merge_orders.py` - merges inbound/outbound source exports and creates stable row IDs.
+- `dtc/dtc_weight_match.py` - the DTC matching pipeline (weight-based same-day pass-through).
+- `dtc/BMR_Transport_Data.csv` - roster of valid `(material, supplier company)` DTC combinations. A material or company absent from it cannot be a DTC order; for genuine missing inbound legs it names the supplier companies to chase in GreenSpark.
+- `data/merge_orders.py` - merges yard inbound/outbound exports into the combined files in `daily_inputs/` and creates stable row IDs.
 
 Run:
 
 ```sh
-python3 data/merge_orders.py
-env MPLCONFIGDIR=/private/tmp python3 dtc/train_outbound_model.py
-env MPLCONFIGDIR=/private/tmp python3 dtc/train_inbound_model.py
-env MPLCONFIGDIR=/private/tmp python3 dtc/dtc_ticket_match.py
+python3 data/merge_orders.py          # optional: rebuild combined inbound/outbound first
+env MPLCONFIGDIR=/private/tmp python3 dtc/dtc_weight_match.py
 ```
 
 Primary outputs:
 
-- `dtc/matched_dtc_orders.csv`
-- `dtc/exceptions_unmatched_or_ambiguous.csv`
-- `dtc/candidate_matches_inbound.csv`
-- `dtc/candidate_matches_outbound.csv`
-- `dtc/match_summary.txt`
-- `dtc/dtc_ticket_match.png`
+- `dtc/dtc_weight_matches.csv` - every DTC order with its matched inbound/outbound tickets and CSV row references.
+- `dtc/dtc_match_exceptions.csv` - rows needing review (missing inbound legs, outside-same-day, not-a-DTC-material).
+- `dtc/dtc_ticket_match.png` - color-coded summary chart.
+- `dtc/dtc_ticket_match.csv` - CSV twin of the chart (identical rows and columns).
 
 ### Inventory and Market Risk
 

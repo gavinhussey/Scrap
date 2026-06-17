@@ -10,12 +10,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-DATA = ROOT / "data"
-DTC = ROOT / "dtc"
+DAILY = ROOT / "daily_inputs"
 
 
 def _latest_inventory() -> Path | None:
-    files = sorted(DATA.glob("combined inventory *.csv"))
+    files = sorted(DAILY.glob("combined inventory *.csv"))
     return files[-1] if files else None
 
 
@@ -27,20 +26,20 @@ def _require(path: Path, label: str) -> None:
 def _require_inputs(skip_dtc: bool) -> None:
     inv = _latest_inventory()
     if inv is None:
-        raise SystemExit("Missing inventory snapshot: data/combined inventory YYYYMMDD.csv")
+        raise SystemExit("Missing inventory snapshot: daily_inputs/combined inventory YYYYMMDD.csv")
 
-    _require(DATA / "2026 ytd combined inbound.csv", "combined inbound export")
-    _require(DATA / "2026 ytd combined outbound.csv", "combined outbound export")
+    _require(DAILY / "2026 ytd combined inbound.csv", "combined inbound export")
+    _require(DAILY / "2026 ytd combined outbound.csv", "combined outbound export")
 
-    if not skip_dtc and not sorted(DTC.glob("*DTC_raw_data*.csv")):
-        raise SystemExit("Missing DTC raw export: dtc/*DTC_raw_data*.csv")
+    if not skip_dtc and not sorted(DAILY.glob("*DTC_raw_data*.csv")):
+        raise SystemExit("Missing DTC raw export: daily_inputs/*DTC_raw_data*.csv")
 
     print("Inputs:", flush=True)
     print(f"  inventory : {inv.relative_to(ROOT)}", flush=True)
-    print("  inbound   : data/2026 ytd combined inbound.csv", flush=True)
-    print("  outbound  : data/2026 ytd combined outbound.csv", flush=True)
+    print("  inbound   : daily_inputs/2026 ytd combined inbound.csv", flush=True)
+    print("  outbound  : daily_inputs/2026 ytd combined outbound.csv", flush=True)
     if not skip_dtc:
-        print(f"  dtc       : {sorted(DTC.glob('*DTC_raw_data*.csv'))[-1].relative_to(ROOT)}", flush=True)
+        print(f"  dtc       : {sorted(DAILY.glob('*DTC_raw_data*.csv'))[-1].relative_to(ROOT)}", flush=True)
 
 
 def _run(label: str, args: list[str]) -> None:
@@ -61,12 +60,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-dtc",
         action="store_true",
-        help="Skip DTC model training and ticket matching.",
-    )
-    parser.add_argument(
-        "--skip-dtc-training",
-        action="store_true",
-        help="Run DTC matching but skip retraining inbound/outbound rankers.",
+        help="Skip DTC ticket matching.",
     )
     parser.add_argument(
         "--merge-orders",
@@ -98,10 +92,7 @@ def main() -> None:
     _run("Rebuild HTML risk report", [sys.executable, "generate_risk_report_html.py"])
 
     if not args.skip_dtc:
-        if not args.skip_dtc_training:
-            _run("Train outbound DTC ranker", [sys.executable, "dtc/train_outbound_model.py"])
-            _run("Train inbound DTC ranker", [sys.executable, "dtc/train_inbound_model.py"])
-        _run("Rebuild DTC ticket matching outputs", [sys.executable, "dtc/dtc_ticket_match.py"])
+        _run("Rebuild DTC ticket matching outputs", [sys.executable, "dtc/dtc_weight_match.py"])
 
     _run("Run tests", [sys.executable, "-m", "pytest"])
     print("\nDaily refresh complete.", flush=True)

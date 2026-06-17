@@ -79,20 +79,27 @@ def main():
     inb["date"] = pd.to_datetime(inb["Effective Date"].str[:10], errors="coerce")
     out["date"] = pd.to_datetime(out["Date In"].str[:10], errors="coerce")
 
+    # Spreadsheet row number as opened in Excel: header is row 1, so the first
+    # data row is row 2 -> position (0-based) + 2.
+    inb["csv_row"] = inb.index + 2
+    out["csv_row"] = out.index + 2
+
     itix = inb.groupby(["Material Code", "Location", "Ticket #"], as_index=False).agg(
         net=("net", "sum"), date=("date", "min"),
-        supplier=("Customer Name", "first"), vendor_class=("Vendor Class", "first"))
+        supplier=("Customer Name", "first"), vendor_class=("Vendor Class", "first"),
+        row_ids=("csv_row", lambda s: ";".join(s.astype(str))))
     itix["tid"] = itix["Location"] + "/" + itix["Ticket #"]
     sup = itix.set_index("tid")[["supplier", "vendor_class"]]
+    rid_by_tid = itix.set_index("tid")["row_ids"].to_dict()
 
     recs = []
     for _, o in dtc.iterrows():
         W = o["net"]
         tkt = o["Outbound Ticket Id"]
-        rec = dict(dtc_row=o["DTC Row Id"], outbound_ticket=tkt, material=o["Material Name"],
+        rec = dict(dtc_row=o["DTC Row Id"], outbound_ticket=tkt, out_csv_row="", material=o["Material Name"],
                    dtc_net=W, out_method="", out_match="",
                    mat_code="", yard="", ship_date="",
-                   in_method="NONE", in_match="", in_total="", consumer=o["Customer Name"],
+                   in_method="NONE", in_match="", in_csv_row="", in_total="", consumer=o["Customer Name"],
                    _W=W, _cand=None, _intid=None)
 
         ot = out[out["Outbound Ticket #"] == tkt]
@@ -100,10 +107,11 @@ def main():
         if len(hit):
             r = hit.iloc[0]
             rec.update(out_method="exact net (linked ticket)", out_match=tkt,
-                       mat_code=r["Material Code"],
+                       out_csv_row=r["csv_row"], mat_code=r["Material Code"],
                        yard=r["Location"], ship_date=str(r["date"].date()) if pd.notna(r["date"]) else "")
         elif len(ot):
             rec.update(out_method="ticket found, net mismatch", out_match=tkt,
+                       out_csv_row=ot.iloc[0]["csv_row"],
                        mat_code=ot.iloc[0]["Material Code"], yard=ot.iloc[0]["Location"],
                        ship_date=str(ot.iloc[0]["date"].date()) if pd.notna(ot.iloc[0]["date"]) else "")
         else:
@@ -136,7 +144,8 @@ def main():
             ex = ex.assign(_d=(ex["date"] - r["_ship"]).abs()).sort_values(["_d"])
             pick = ex.iloc[0]
             consumed.add(pick["tid"])
-            r.update(in_method="exact net", in_match=f"#{pick['Ticket #']}", in_total=round(pick["net"]), _intid=pick["tid"])
+            r.update(in_method="exact net", in_match=f"#{pick['Ticket #']}", in_csv_row=pick["row_ids"],
+                     in_total=round(pick["net"]), _intid=pick["tid"])
 
     for i in order:
         r = recs[i]
@@ -151,6 +160,7 @@ def main():
                 consumed.add(tid)
             r.update(in_method="sum of nets",
                      in_match=" + ".join(f"#{tid.split('/')[1]}({int(round(w))})" for tid, w, _ in s),
+                     in_csv_row=";".join(rid_by_tid.get(tid, "") for tid, *_ in s),
                      in_total=sum(int(round(w)) for _, w, _ in s))
 
     for i in order:
@@ -167,7 +177,7 @@ def main():
             pick = ex.iloc[0]; consumed.add(pick["tid"])
             gap = int(np.busday_count(r["_ship"].date(), pick["date"].date()))
             r.update(in_method="exact net (outside same-day)", in_match=f"#{pick['Ticket #']}",
-                     in_total=round(pick["net"]), _gap=gap, _intid=pick["tid"])
+                     in_csv_row=pick["row_ids"], in_total=round(pick["net"]), _gap=gap, _intid=pick["tid"])
 
     for r in recs:
         r.update(supplier="", supplier_class="", supplier_check="", confidence="")
@@ -244,25 +254,48 @@ def main():
     print(chase[["dtc_row", "outbound_ticket", "material", "dtc_net", "yard",
                  "ship_date", "chase_suppliers"]].to_string(index=False))
     render_chart(res, os.path.join(HERE, "dtc_ticket_match.png"))
-    print(f"\n-> wrote dtc/dtc_weight_matches.csv, dtc/dtc_match_exceptions.csv, dtc/dtc_ticket_match.png")
+    write_chart_csv(res, os.path.join(HERE, "dtc_ticket_match.csv"))
+    print(f"\n-> wrote dtc/dtc_weight_matches.csv, dtc/dtc_match_exceptions.csv, "
+          f"dtc/dtc_ticket_match.png, dtc/dtc_ticket_match.csv")
+
+
+# Columns shown in the chart PNG and its CSV twin (dtc_ticket_match.csv). Both are
+# built from this one spec via _chart_table, so they always carry identical rows/cols.
+CHART_COLS = [("dtc_row", "DTC\nRow"), ("material", "Material"), ("dtc_net", "DTC\nNet"),
+              ("outbound_ticket", "OB\nTicket"), ("out_csv_row", "OB\nCSV Row"),
+              ("yard", "Yard"), ("ship_date", "Ship\nDate"),
+              ("in_match", "Inbound\nTicket(s)"), ("in_csv_row", "Inbound\nCSV Row"),
+              ("supplier", "Inbound Supplier"),
+              ("exception_reason", "Exception / Note")]
+
+
+def _chart_table(res, truncate=False):
+    """Display frame behind both the PNG and its CSV twin. For genuine missing legs
+    (no inbound supplier) the roster's candidate suppliers fill the supplier cell."""
+    disp = res[[c for c, _ in CHART_COLS]].copy()
+    disp["supplier"] = disp["supplier"].fillna("")
+    disp["exception_reason"] = disp["exception_reason"].fillna("")
+    disp["in_match"] = disp["in_match"].fillna("")
+    chase_mask = (res["in_method"] == "NONE") & (res["chase_suppliers"].fillna("") != "")
+    disp.loc[chase_mask, "supplier"] = "chase: " + res.loc[chase_mask, "chase_suppliers"].fillna("")
+    if truncate:  # cosmetic, PNG only — the CSV twin keeps full text
+        disp["material"] = disp["material"].str.slice(0, 22)
+        disp["in_match"] = disp["in_match"].str.slice(0, 22)
+        disp["supplier"] = disp["supplier"].str.slice(0, 46)
+    return disp
+
+
+def write_chart_csv(res, path):
+    """CSV twin of the chart PNG — identical columns and rows, untruncated text."""
+    disp = _chart_table(res, truncate=False)
+    disp.columns = [h.replace("\n", " ") for _, h in CHART_COLS]
+    disp.to_csv(path, index=False)
 
 
 def render_chart(res, path):
     """Color-coded table image: green = High (net+supplier), amber = flagged, red = none."""
-    cols = [("dtc_row", "DTC\nRow"), ("material", "Material"), ("dtc_net", "DTC\nNet"),
-            ("outbound_ticket", "OB\nTicket"), ("yard", "Yard"), ("ship_date", "Ship\nDate"),
-            ("in_match", "Inbound\nTicket(s)"),
-            ("supplier", "Inbound Supplier"),
-            ("exception_reason", "Exception / Note")]
-    disp = res[[c for c, _ in cols]].copy()
-    disp["material"] = disp["material"].str.slice(0, 22)
-    disp["supplier"] = disp["supplier"].fillna("").str.slice(0, 22)
-    # For genuine missing legs (no inbound supplier), show the roster's candidate
-    # suppliers to chase instead of an empty cell.
-    chase_mask = (res["in_method"] == "NONE") & (res["chase_suppliers"].fillna("") != "")
-    disp.loc[chase_mask, "supplier"] = "chase: " + res.loc[chase_mask, "chase_suppliers"].str.slice(0, 40)
-    disp["exception_reason"] = disp["exception_reason"].fillna("")
-    disp["in_match"] = disp["in_match"].fillna("").str.slice(0, 22)
+    cols = CHART_COLS
+    disp = _chart_table(res, truncate=True)
 
     n = len(disp)
     fig, ax = plt.subplots(figsize=(24, 0.32 * n + 1.8))
