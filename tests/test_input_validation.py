@@ -8,6 +8,7 @@ from src.input_validation import file_provenance, require_nonnegative, validate_
 from src.outbound_loader import load_outbound
 
 
+# both loaders should complain loudly if a required column is missing
 def test_inbound_loader_reports_missing_required_columns(tmp_path):
     path = tmp_path / "bad inbound.csv"
     path.write_text("Commodity Name,Cost\nSTEEL,10\n", encoding="utf-8")
@@ -24,11 +25,13 @@ def test_outbound_loader_reports_missing_required_columns(tmp_path):
         load_outbound([path])
 
 
+# a negative value where one shouldn't exist is a hard error
 def test_require_nonnegative_rejects_negative_values():
     with pytest.raises(ValueError, match="negative value"):
         require_nonnegative(pd.Series([1, -2, 3]), "test series")
 
 
+# one messy snapshot should trip every soft warning at once
 def test_greenspark_snapshot_validation_warns_on_stale_duplicates_unmapped_and_outliers():
     raw = pd.DataFrame([
         {
@@ -73,6 +76,7 @@ def test_greenspark_snapshot_validation_warns_on_stale_duplicates_unmapped_and_o
     assert any("cost" in w and "/lb" in w for w in warnings)
 
 
+# provenance should capture the name, row count, date and a full hash
 def test_file_provenance_includes_rows_snapshot_date_and_hash(tmp_path):
     path = tmp_path / "combined inventory 20260612.csv"
     path.write_text("a,b\n1,2\n3,4\n", encoding="utf-8")

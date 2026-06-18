@@ -6,6 +6,7 @@ import pytest
 from src.positions import build_positions, _fifo_remaining
 
 
+# tiny builders for a fake purchase lot and a fake sale
 def _lot(date, qty, price=100.0, grade="STEEL", metal="steel"):
     return {
         "purchase_date": pd.Timestamp(date), "metal": metal, "grade": grade,
@@ -23,6 +24,7 @@ def _sale(date, qty, grade="STEEL", metal="steel", rev=0.0, cogs=0.0):
     }
 
 
+# buy a hundred sell seventy, thirty should be left
 def test_simple_net():
     inbound = pd.DataFrame([_lot("2026-01-01", 100)])
     outbound = pd.DataFrame([_sale("2026-02-01", 70)])
@@ -32,6 +34,7 @@ def test_simple_net():
     assert recon_g.loc[0, "shortfall_t"] == pytest.approx(0.0)
 
 
+# selling eats the oldest lot first so the survivor carries the newer cost
 def test_fifo_consumes_oldest_first():
     inbound = pd.DataFrame([
         _lot("2026-01-01", 10, price=50),
@@ -44,6 +47,7 @@ def test_fifo_consumes_oldest_first():
     assert (inv["purchase_date"] == pd.Timestamp("2026-03-01")).all()
 
 
+# selling more than we bought floors at zero and records the shortfall
 def test_oversold_floors_to_zero_and_flags_shortfall():
     inbound = pd.DataFrame([_lot("2026-01-01", 100)])
     outbound = pd.DataFrame([_sale("2026-02-01", 120)])
@@ -53,6 +57,7 @@ def test_oversold_floors_to_zero_and_flags_shortfall():
     assert recon_g.loc[0, "shortfall_t"] == pytest.approx(20.0)
 
 
+# a grade we only ever sold still shows up in the reconciliation
 def test_sell_only_grade_reported():
     inbound = pd.DataFrame([_lot("2026-01-01", 10, grade="STEEL", metal="steel")])
     outbound = pd.DataFrame([_sale("2026-02-01", 5, grade="COPPER TIER 1", metal="copper")])
@@ -62,6 +67,7 @@ def test_sell_only_grade_reported():
     assert cu["shortfall_t"] == pytest.approx(5.0)
 
 
+# the metal level rollup adds its grades together
 def test_metal_rollup_sums_grades():
     inbound = pd.DataFrame([
         _lot("2026-01-01", 10, grade="COPPER TIER 1", metal="copper"),
@@ -74,6 +80,7 @@ def test_metal_rollup_sums_grades():
     assert cu["on_hand_t"] == pytest.approx(25.0)
 
 
+# a partly sold lot keeps its original cost on the leftover tonnes
 def test_partial_lot_preserves_cost_basis():
     survivors, shortfall = _fifo_remaining(
         pd.DataFrame([_lot("2026-01-01", 10, price=42)]), sold_tonnes=4
@@ -83,6 +90,7 @@ def test_partial_lot_preserves_cost_basis():
     assert (survivors["purchase_price_per_tonne"] == 42).all()
 
 
+# revenue minus cogs gives the gross margin and its percentage
 def test_realized_margin():
     inbound = pd.DataFrame([_lot("2026-01-01", 10)])
     outbound = pd.DataFrame([_sale("2026-02-01", 5, rev=1000.0, cogs=600.0)])

@@ -4,6 +4,7 @@ import pytest
 from src import risk_engine
 
 
+# VaR and monte carlo should see the vol adjusted series, not the raw spot prices
 def test_build_market_risk_uses_adjusted_risk_series_for_var_and_mc(monkeypatch):
     dates = pd.bdate_range("2026-01-01", periods=4)
     spot = pd.Series([100.0, 101.0, 102.0, 103.0], index=dates, name="copper")
@@ -54,6 +55,7 @@ def test_build_market_risk_uses_adjusted_risk_series_for_var_and_mc(monkeypatch)
     assert captured["mc_prices"].equals(adjusted)
 
 
+# with synthetic prices banned the build should refuse to run
 def test_build_market_risk_can_fail_on_synthetic_prices(monkeypatch):
     monkeypatch.setattr(risk_engine, "fetch_all_prices", lambda force_refresh=False: {"copper": pd.Series([1.0, 2.0])})
     monkeypatch.setattr(risk_engine, "price_source_summary", lambda: {"copper": "synthetic"})

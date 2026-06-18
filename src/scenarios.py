@@ -5,6 +5,7 @@ import pandas as pd
 from src.config import BASIS_STRESS_POINTS, STRESS_SCENARIOS
 
 
+# hit each metal with its named price shock and tally the pnl per scenario
 def run_scenarios(
     exposures: dict[str, float],
     scenarios: dict[str, dict[str, float]] | None = None,
@@ -36,6 +37,7 @@ def run_scenarios(
     return pd.DataFrame(rows)
 
 
+# pick out the best and worst scenarios for the headline numbers
 def worst_case_summary(scenario_df: pd.DataFrame) -> dict:
     worst = scenario_df.loc[scenario_df["total_pnl"].idxmin()]
     best = scenario_df.loc[scenario_df["total_pnl"].idxmax()]
@@ -54,6 +56,7 @@ def run_basis_stress(mtm_df: pd.DataFrame, points: list[float] | None = None) ->
     if points is None:
         points = BASIS_STRESS_POINTS
 
+    # only priced lots have a real basis to compress, walk each metal at each level
     priced = mtm_df[mtm_df["valuation_confidence"] != "Unpriced"].copy()
     total = float(priced["net_realizable_value"].sum())
     rows = []

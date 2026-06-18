@@ -17,17 +17,22 @@ _OUTBOUND_REQUIRED = {
     "Net Weight",
 }
 
+# only sales in one of these states have really left, so only they deplete stock
 DEPLETING_STATUSES = {"PAID", "INVOICED", "SHIPPED"}
 
 
+# prefer a prebuilt combined file, otherwise grab the individual outbound exports
 def find_outbound_csvs(directory: Path | None = None) -> list[Path]:
-    directory = directory or DAILY_INPUT_DIR
-    combined = sorted(directory.glob("*combined*outbound*.csv"))
+    search = directory if directory is not None else DAILY_INPUT_DIR
+    combined = sorted(search.glob("*combined*outbound*.csv"))
+    if not combined and directory is None:
+        combined = sorted(DATA_DIR.glob("*combined*outbound*.csv"))
     if combined:
         return combined
-    return sorted(p for p in directory.glob(_OUTBOUND_GLOB) if "combined" not in p.name.lower())
+    return sorted(p for p in search.glob(_OUTBOUND_GLOB) if "combined" not in p.name.lower())
 
 
+# read one sales csv into our standard shape, carrying revenue and cogs through
 def _read_outbound_one(path: Path | str) -> pd.DataFrame:
     raw = pd.read_csv(path, dtype=str, keep_default_na=False)
     raw.columns = [c.strip() for c in raw.columns]
@@ -64,6 +69,7 @@ def _read_outbound_one(path: Path | str) -> pd.DataFrame:
     return df
 
 
+# read every sales file, keep only the depleting statuses and sort by date
 def load_outbound(
     paths: list[Path | str] | None = None,
     statuses: set[str] | None = DEPLETING_STATUSES,

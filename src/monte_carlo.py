@@ -93,7 +93,6 @@ def simulate(
 
     shocks = _correlated_shocks(corr, n_sims, horizon)
 
-    # zero-drift VaR convention: martingale in price (drift = -0.5 sigma^2)
     drift = mu - 0.5 * sigma ** 2
     diffusion = sigma
 

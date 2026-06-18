@@ -32,6 +32,7 @@ COLORS = {
 }
 
 
+# small formatters for the page, money, percent and a sign based css class
 def usd(v: float, signed: bool = False, compact: bool = False) -> str:
     sign = ""
     if signed:
@@ -50,6 +51,7 @@ def cls(v: float) -> str:
     return "pos" if v >= 0 else "neg"
 
 
+# pick the coloured badge class for a valuation confidence label
 def confidence_class(v: object) -> str:
     label = str(v).lower()
     if label.startswith("a:"):
@@ -61,10 +63,12 @@ def confidence_class(v: object) -> str:
     return "quality-mid"
 
 
+# html escape any value before it goes onto the page
 def esc(v: object) -> str:
     return html.escape(str(v))
 
 
+# wrap a block of row html in a table with optional head and foot
 def table(rows: str, head: str | None = None, foot: str | None = None) -> str:
     h = f"<thead>{head}</thead>" if head else ""
     f = f"<tfoot>{foot}</tfoot>" if foot else ""

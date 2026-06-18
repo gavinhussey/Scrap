@@ -1,6 +1,4 @@
-"""
-Fetch, cache, and normalise metal spot prices to USD per metric tonne.
-"""
+"""Fetch, cache, and normalise metal spot prices to USD per metric tonne."""
 
 import warnings
 from datetime import datetime, timedelta

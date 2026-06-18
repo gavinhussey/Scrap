@@ -25,6 +25,7 @@ LAST_SNAPSHOT_VALIDATION_WARNINGS: list[str] = []
 LAST_SNAPSHOT_PROVENANCE: dict[str, str | int | None] = {}
 
 
+# weight average acquisition date per material code, so snapshot lots get a real age
 def _inbound_avg_date_by_code() -> pd.Series | None:
     dirs = [DAILY_INPUT_DIR, DATA_DIR]
     paths: list = []
@@ -55,6 +56,7 @@ def _inbound_avg_date_by_code() -> pd.Series | None:
     return ref + pd.to_timedelta(agg["wd"] / agg["w"], unit="D")
 
 
+# grab the newest combined inventory csv, daily folder first then the data dir
 def _latest_snapshot():
     files = sorted(DAILY_INPUT_DIR.glob(_SNAPSHOT_GLOB))
     if not files:
@@ -84,6 +86,7 @@ def _market_price_per_tonne_by_code() -> pd.Series | None:
     return s[s > 0]
 
 
+# turn one greenspark snapshot into priced lots we can mark, plus the lines we drop
 def load_greenspark_lots() -> tuple[pd.DataFrame, pd.DataFrame]:
     path = _latest_snapshot()
     raw = pd.read_csv(path, thousands=",")
@@ -112,6 +115,7 @@ def load_greenspark_lots() -> tuple[pd.DataFrame, pd.DataFrame]:
     df = df[df["quantity_tonnes"] > 0].copy()
     df["purchase_price_per_tonne"] = df["cost"] / df["quantity_tonnes"]
 
+    # bolt on a purchase date and a real sale price where we can find them
     acq = _inbound_avg_date_by_code()
     snap = _snapshot_date(path)
     df["purchase_date"] = (df["material_code"].map(acq).fillna(snap)
@@ -121,6 +125,7 @@ def load_greenspark_lots() -> tuple[pd.DataFrame, pd.DataFrame]:
     if mp is not None:
         df["market_price_per_tonne"] = df["material_code"].map(mp)
 
+    # anything we can't map to a modelled metal gets set aside, not silently kept
     dropped = df[df["metal"].isna()].copy()
     lots = df[df["metal"].notna()].drop(columns=["cost"]).reset_index(drop=True)
     return lots, dropped

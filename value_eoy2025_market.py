@@ -1,18 +1,4 @@
-"""Value the reconstructed EOY-2025 portfolio at end-of-2025 MARKET prices.
-
-We have EOY-2025 quantities (from reconstruct_opening_inventory.py) and real scrap
-SALE prices from Jan-2026 transactions, but no Dec-2025 scrap prices. So:
-
-  EOY-2025 grade price ($/lb) = Jan-2026 scrap sale vwap        (real per-grade basis)
-                                x  futures(Dec-31-2025) / futures(Jan-2026)   (yfinance)
-
-i.e. take the real January scrap price and roll it back to Dec-31 by the underlying
-metal's futures move. This keeps the true scrap basis (from our own sales) and uses
-yfinance only for the metal price *move* over the few weeks involved.
-
-Nickel futures (NI=F) are delisted on Yahoo, so stainless is held at its Jan price
-(no Dec-2025 adjustment) and flagged; lead/zinc/other likewise have no proxy.
-"""
+"""Value the reconstructed EOY-2025 portfolio at end-of-2025 MARKET prices."""
 
 import os
 import re
@@ -23,18 +9,23 @@ import yfinance as yf
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
+DAILY = os.path.join(HERE, "daily_inputs")
 OUT = os.path.join(HERE, "output")
 _BRACKET = re.compile(r"\[[^\]]*\]$")
 
+
+def _glob(pattern):
+    hits = glob.glob(os.path.join(DAILY, pattern))
+    return hits or glob.glob(os.path.join(DATA, pattern))
+
 EOY = "2025-12-31"
-JAN_END = "2026-02-01"          # Jan-2026 window: the "early" prices we anchor to
-# metal -> yfinance futures proxy (brass priced off copper; rest have no proxy)
+JAN_END = "2026-02-01"
 PROXY = {"COPPER": "HG=F", "STEEL": "HRC=F", "ALUMINUM": "ALI=F", "BRASS": "HG=F"}
 
 
 def _flow_lines(pattern: str, value_col: str) -> pd.DataFrame:
     frames = []
-    for p in glob.glob(os.path.join(DATA, pattern)):
+    for p in _glob(pattern):
         if "combined" in os.path.basename(p):
             continue
         d = pd.read_csv(p, thousands=",")
@@ -96,7 +87,7 @@ def main() -> None:
 
     df = holdings.merge(prices, on="code", how="left")
     df["jan_price"] = df["jan_price"].fillna(0.0)
-    df["factor"] = df["metal"].map(factors).fillna(1.0)       # no-proxy metals held flat
+    df["factor"] = df["metal"].map(factors).fillna(1.0)
     df["adjusted"] = df["metal"].isin(factors)
     df["eoy_price"] = (df["jan_price"] * df["factor"]).round(4)
     df["jan_value"] = (df["qty_lbs"] * df["jan_price"]).round(2)

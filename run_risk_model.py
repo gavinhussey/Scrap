@@ -1,6 +1,4 @@
-"""
-Entry point for the Scrapyard Risk Model.
-"""
+"""Entry point for the Scrapyard Risk Model."""
 
 import argparse
 import sys
@@ -39,14 +37,14 @@ def main(refresh: bool = False, charts: bool = True, allow_synthetic: bool = Tru
     scenario_df = results.scenario_df
     ws = results.worst_case
 
-    # ── Print report ──────────────────────────────────────────────────────────
+    # Print report
     print_inventory(results.summary, results.total_mtm, results.total_pnl)
     print_var(var_df)
     print_monte_carlo(mc)
     print_mc_horizons(mc_results, mc_horizons)
     print_scenarios(scenario_df, ws)
 
-    # ── Charts ────────────────────────────────────────────────────────────────
+    # Charts
     if charts:
         print("Generating charts...")
         rendered = render_risk_charts(results)

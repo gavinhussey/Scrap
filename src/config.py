@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+# where everything lives on disk
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DAILY_INPUT_DIR = BASE_DIR / "daily_inputs"
@@ -9,6 +10,7 @@ CACHE_DIR = BASE_DIR / "cache"
 OUTPUT_DIR = BASE_DIR / "output"
 CHARTS_DIR = OUTPUT_DIR / "charts"
 
+# per metal ticker, unit conversion and how each scrap grade prices off the clean metal
 METALS: dict = {
     "copper": {
         "ticker": "HG=F",
@@ -68,10 +70,12 @@ METALS: dict = {
     },
 }
 
+# global risk knobs, scrap moves harder than futures and we kill drift for VaR
 SCRAP_BASIS_VOL_MULT = 1.25
 
 MC_ZERO_DRIFT = True
 
+# maps greenspark commodity names onto our metal buckets, None means ignore the line
 COMMODITY_TO_METAL: dict[str, str | None] = {
     "STEEL":                  "steel",
     "ALUMINUM":               "aluminium",
@@ -88,12 +92,14 @@ COMMODITY_TO_METAL: dict[str, str | None] = {
     "ZWASTE":                 None,
 }
 
+# core settings for every risk run
 LOOKBACK_YEARS = 5
 HOLDING_PERIOD_DAYS = 30
 VAR_CONFIDENCE_LEVELS = [0.90, 0.95, 0.99]
 MONTE_CARLO_SIMULATIONS = 10_000
 EWMA_LAMBDA = 0.94
 
+# haircut on a normal orderly sale, then a steeper one for a forced liquidation
 NET_REALIZABLE_HAIRCUTS: dict[str, float] = {
     "copper": 0.04,
     "aluminium": 0.06,
@@ -116,6 +122,7 @@ LIQUIDATION_HAIRCUTS: dict[str, float] = {
 
 BASIS_STRESS_POINTS = [0.02, 0.05, 0.10]
 
+# named price shocks we push the whole book through
 STRESS_SCENARIOS: dict[str, dict[str, float]] = {
     "2008 Financial Crisis": {
         "copper":    -0.65,
@@ -164,6 +171,7 @@ STRESS_SCENARIOS: dict[str, dict[str, float]] = {
     },
 }
 
+# plain english record of every judgement call so the report can show its working
 ASSUMPTIONS: dict[str, dict[str, str]] = {
     "scrap_basis_vol_multiplier": {
         "value": str(SCRAP_BASIS_VOL_MULT),

@@ -10,6 +10,7 @@ from src.prices import latest_price
 last_reconciliation: dict[str, pd.DataFrame] = {}
 
 
+# pull the current book, either by netting buys against sales or straight from greenspark
 def load_inventory(source: str = "greenspark", inbound_paths=None, outbound_paths=None) -> pd.DataFrame:
     if source == "netting":
         inv, recon_grade, recon_metal, margin = current_inventory(inbound_paths, outbound_paths)
@@ -35,11 +36,13 @@ def load_inventory(source: str = "greenspark", inbound_paths=None, outbound_path
     return lots
 
 
+# scrap trades at a fraction of the clean metal price, that fraction is the basis
 def _grade_basis(metal: str, grade: str) -> float:
     basis_map = METALS[metal]["grade_basis"]
     return basis_map.get(grade, basis_map["default"])
 
 
+# value every lot at spot times grade basis, then work out unrealised pnl
 def mark_to_market(
     df: pd.DataFrame,
     spot_prices: dict[str, float] | None = None,
@@ -60,6 +63,7 @@ def mark_to_market(
     real_price = pd.to_numeric(real, errors="coerce")
     has_real = real_price.notna() & (real_price > 0)
 
+    # prefer a real sale price, otherwise either fall back to futures or just hold at book
     if allow_futures_fallback:
         result["scrap_price_per_tonne"] = real_price.fillna(modelled_scrap)
         result["price_source"] = has_real.map({True: "real sale", False: "futures x basis"})
@@ -80,12 +84,14 @@ def mark_to_market(
         False: "normal cost basis",
     })
 
+    # knock off haircuts for a normal sale and for a forced fire sale liquidation
     result["net_realizable_haircut"] = result["metal"].map(NET_REALIZABLE_HAIRCUTS).fillna(0.10)
     result["liquidation_haircut"] = result["metal"].map(LIQUIDATION_HAIRCUTS).fillna(0.20)
     result["net_realizable_value"] = result["mtm_value"] * (1 - result["net_realizable_haircut"])
     result["liquidation_value"] = result["mtm_value"] * (1 - result["liquidation_haircut"])
     result["net_unrealised_pnl"] = result["net_realizable_value"] - result["book_value"]
     result["liquidation_pnl"] = result["liquidation_value"] - result["book_value"]
+    # unpriced lots still need to carry risk, so give them a conservative proxy value
     unpriced_proxy_value = modelled_scrap * result["quantity_tonnes"] * (1 - result["net_realizable_haircut"])
     result["risk_exposure_source"] = has_real.map({
         True: "priced nrv",
@@ -104,6 +110,7 @@ def mark_to_market(
     return result
 
 
+# collapse the lot level book down to one row per metal
 def portfolio_summary(mtm_df: pd.DataFrame) -> pd.DataFrame:
     df = mtm_df.copy()
     df["_basis_x_tonnes"] = df["basis_factor"] * df["quantity_tonnes"]
@@ -136,6 +143,7 @@ def portfolio_summary(mtm_df: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
+# quick totals, whole book mtm and risk exposure split out by metal
 def total_exposure(mtm_df: pd.DataFrame) -> float:
     return float(mtm_df["mtm_value"].sum())
 

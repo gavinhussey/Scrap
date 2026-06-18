@@ -1,18 +1,4 @@
-"""Cost vs market valuation for EOY-2025 and today, plus 2026-YTD unrealized gain.
-
-Inputs (data/):
-  - <yard> inv summary 2025-12-31.csv   GreenSpark closing balance per material (EOY-2025)
-  - combined inventory 20260612.csv     GreenSpark current balance (weight + Total Cost)
-  - 2026 ytd *outbound.csv              sales lines (Expected Value / Net Weight = sale $/lb)
-  - 2026 ytd *inbound.csv               purchase lines (Cost / Net Weight = buy $/lb)
-
-Cost basis is taken straight from GreenSpark (Closing Cost / Total Cost) -- it is known,
-not modelled. Market value is the only modelled piece: per-grade $/lb from our own
-transacted prices, with a provenance ladder (recent sale -> YTD sale -> purchase -> cost).
-EOY-2025 market uses Jan-2026 sale prices rolled back to Dec-31 by each metal's futures
-move (yfinance); today's market uses sale prices from the last 60 days. Metals with no
-futures proxy are held flat and flagged.
-"""
+"""Cost vs market valuation for EOY-2025 and today, plus 2026-YTD unrealized gain."""
 
 import os
 import re
@@ -28,8 +14,8 @@ _TIER = re.compile(r"\s*TIER\s*\d+\s*$", re.I)
 _BRACKET = re.compile(r"\[[^\]]*\]$")
 
 EOY = "2025-12-31"
-JAN_END = "2026-02-01"            # window anchoring the EOY market price
-RECENT_DAYS = 60                  # "today" sale window, counted back from latest ticket
+JAN_END = "2026-02-01"
+RECENT_DAYS = 60
 PROXY = {"COPPER": "HG=F", "STEEL": "HRC=F", "ALUMINUM": "ALI=F", "BRASS": "HG=F"}
 
 
@@ -39,7 +25,6 @@ def _metal(name: object) -> str:
     return _TIER.sub("", str(name).strip().upper())
 
 
-# ---- inventory levels (cost basis is read directly, never modelled) -------------------
 
 def load_eoy2025() -> pd.DataFrame:
     frames = []
@@ -71,7 +56,16 @@ def load_current() -> pd.DataFrame:
     })
 
 
-# ---- market $/lb per grade, from our own transacted prices ----------------------------
+def _today_label() -> str:
+    files = (sorted(glob.glob(os.path.join(DAILY, "combined inventory *.csv")))
+             or sorted(glob.glob(os.path.join(DATA, "combined inventory *.csv"))))
+    if files:
+        m = re.search(r"(\d{4})(\d{2})(\d{2})", os.path.basename(files[-1]))
+        if m:
+            return f"{m.group(2)}/{m.group(3)}/{m.group(1)}"
+    return "today"
+
+
 
 def _flow_lines(pattern: str, value_col: str, date_col: str) -> pd.DataFrame:
     frames = []
@@ -146,7 +140,6 @@ def futures_factors() -> tuple[dict, dict]:
     return factors, detail
 
 
-# ---- assembly -------------------------------------------------------------------------
 
 def by_metal(df: pd.DataFrame, value_col: str) -> pd.DataFrame:
     g = (df.groupby("metal", as_index=False)
@@ -166,12 +159,10 @@ def main() -> None:
     today, janp = grade_prices(avg_cost)
     factors, detail = futures_factors()
 
-    # today's market value
     cur = cur.merge(today, left_on="code", right_index=True, how="left")
     cur["price"] = cur["price"].fillna(0.0)
     cur["mkt"] = (cur["wt"] * cur["price"]).round(2)
 
-    # EOY-2025 market value: Jan price rolled back to Dec-31 by the metal's futures move
     eoy = eoy.merge(janp.rename("jan_price"), left_on="code", right_index=True, how="left")
     eoy["jan_price"] = eoy["jan_price"].fillna(0.0)
     eoy["factor"] = eoy["metal"].map(factors).fillna(1.0)
@@ -182,10 +173,11 @@ def main() -> None:
     c_cost, c_mkt = cur["cost"].sum(), cur["mkt"].sum()
     e_metal, c_metal = by_metal(eoy, "mkt"), by_metal(cur, "mkt")
 
+    today_label = _today_label()
     L, A = [], lambda s: None
     out = []
     A = out.append
-    A("INVENTORY VALUATION — COST vs MARKET, EOY-2025 and TODAY (06/12/2026)")
+    A(f"INVENTORY VALUATION — COST vs MARKET, EOY-2025 and TODAY ({today_label})")
     A("=" * 78)
     if detail:
         A("Futures roll-back (Dec-31-2025 close / Jan-2026 avg) applied to EOY market:")
@@ -205,7 +197,7 @@ def main() -> None:
     A(f"{'unrealized gain (%)':<22}{100*(e_mkt-e_cost)/e_cost:>15.1f}%{100*(c_mkt-c_cost)/c_cost:>15.1f}%")
     A("")
     for label, m, tot_c, tot_m in [("EOY-2025", e_metal, e_cost, e_mkt),
-                                    ("TODAY (06/12/2026)", c_metal, c_cost, c_mkt)]:
+                                    (f"TODAY ({today_label})", c_metal, c_cost, c_mkt)]:
         A(f"PORTFOLIO BY METAL — {label}")
         A(f"  {'metal':<16}{'cost $':>12}{'mkt $':>12}{'cost%':>8}{'mkt%':>8}{'unreal $':>12}")
         for _, r in m.iterrows():

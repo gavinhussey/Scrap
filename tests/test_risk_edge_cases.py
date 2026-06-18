@@ -4,6 +4,7 @@ from src.monte_carlo import simulate
 from src.var_model import portfolio_var
 
 
+# no exposure means no risk, VaR should come back flat zero
 def test_portfolio_var_returns_zero_for_zero_exposure():
     returns = pd.Series([0.01, -0.02, 0.01])
     result = portfolio_var({"copper": 0.0}, {"copper": returns})
@@ -12,6 +13,7 @@ def test_portfolio_var_returns_zero_for_zero_exposure():
     assert result["portfolio_cvar"] == 0.0
 
 
+# a perfectly flat price series shouldn't break the simulation
 def test_monte_carlo_handles_zero_volatility_series():
     prices = {"copper": pd.Series([100.0] * 40)}
     result = simulate({"copper": 1_000.0}, prices, horizon=30, n_sims=100)

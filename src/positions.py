@@ -14,6 +14,7 @@ _LOT_COLS = [
 ]
 
 
+# burn down the oldest lots first until the sold tonnage is used up, keep what survives
 def _fifo_remaining(lots: pd.DataFrame, sold_tonnes: float) -> tuple[pd.DataFrame, float]:
     lots = lots.sort_values("purchase_date")
     to_consume = sold_tonnes
@@ -35,6 +36,7 @@ def _fifo_remaining(lots: pd.DataFrame, sold_tonnes: float) -> tuple[pd.DataFram
     return survivors_df, max(to_consume, 0.0)
 
 
+# net every grade's buys against its sales to get what's actually still on the yard
 def build_positions(
     inbound: pd.DataFrame,
     outbound: pd.DataFrame,
@@ -68,6 +70,7 @@ def build_positions(
             "shortfall_t": shortfall,
         })
 
+    # stitch the surviving lots back together and roll the reconciliation up to metal level
     inventory_df = (
         pd.concat(inventory_rows, ignore_index=True)
         if inventory_rows else pd.DataFrame(columns=_LOT_COLS)
@@ -85,6 +88,7 @@ def build_positions(
     return inventory_df, recon_grade, recon_metal, margin_df
 
 
+# what we actually made on the stuff that has already gone out the door
 def realized_margin(outbound: pd.DataFrame) -> pd.DataFrame:
     g = outbound.groupby(["metal", "grade"]).agg(
         sold_t=("quantity_tonnes", "sum"),
@@ -96,6 +100,7 @@ def realized_margin(outbound: pd.DataFrame) -> pd.DataFrame:
     return g.sort_values(["metal", "grade"]).reset_index(drop=True)
 
 
+# load both sides off disk and net them, the one call the rest of the app uses
 def current_inventory(
     inbound_paths=None,
     outbound_paths=None,

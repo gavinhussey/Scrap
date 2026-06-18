@@ -13,6 +13,7 @@ EXTREME_ROW_WEIGHT_LBS = 500_000
 EXTREME_COST_PER_LB = 10.0
 
 
+# hard checks that should stop the run, missing columns or negative numbers
 def require_columns(df: pd.DataFrame, required: set[str], label: str) -> None:
     missing = sorted(required - set(df.columns))
     if missing:
@@ -27,6 +28,7 @@ def require_nonnegative(series: pd.Series, label: str) -> None:
         raise ValueError(f"{label} has negative value(s) at row index: {examples}")
 
 
+# read the snapshot date off the filename and count how many work days old it is
 def _snapshot_date(path: Path) -> pd.Timestamp | None:
     match = re.search(r"(\d{8})", path.name)
     if not match:
@@ -42,6 +44,7 @@ def _business_days_old(snapshot_date: pd.Timestamp, today: pd.Timestamp) -> int:
     return len(pd.bdate_range(start, end))
 
 
+# soft checks that just warn, staleness, dupes, unmapped grades and silly numbers
 def validate_greenspark_snapshot(
     raw: pd.DataFrame,
     path: Path,
@@ -65,6 +68,7 @@ def validate_greenspark_snapshot(
                 f"({snap_date.date()} from {path.name})"
             )
 
+    # same material in the same place twice usually means a double export
     dup_cols = ["Location", "Material Code"]
     if set(dup_cols) <= set(raw.columns):
         dup = raw.duplicated(dup_cols, keep=False)
@@ -90,6 +94,7 @@ def validate_greenspark_snapshot(
             suffix = "..." if len(unmapped) > 8 else ""
             warnings.append(f"Unmapped commodity name(s): {preview}{suffix}")
 
+    # sniff out numbers that look wrong, free weight, giant rows or crazy cost per lb
     if {"Total Net Weight", "Total Cost"} <= set(raw.columns):
         weight = pd.to_numeric(raw["Total Net Weight"], errors="coerce")
         cost = pd.to_numeric(raw["Total Cost"], errors="coerce")
@@ -123,6 +128,7 @@ def validate_greenspark_snapshot(
     return warnings
 
 
+# turn a boolean mask into a few readable example rows for the warning text
 def _row_examples(raw: pd.DataFrame, mask: pd.Series, limit: int = 5) -> list[str]:
     cols = [c for c in ["Location", "Material Code", "Material Name"] if c in raw.columns]
     if not cols:
@@ -134,6 +140,7 @@ def _row_examples(raw: pd.DataFrame, mask: pd.Series, limit: int = 5) -> list[st
     return examples
 
 
+# fingerprint the input file so the report can prove exactly what it ran on
 def file_provenance(path: Path, latest_date: pd.Timestamp | None = None) -> dict[str, str | int | None]:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     snap_date = _snapshot_date(path)

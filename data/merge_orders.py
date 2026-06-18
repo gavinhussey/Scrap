@@ -1,27 +1,43 @@
 """Merge inbound and outbound orders from both locations (Milton/Benton & Merrillville)."""
 
+import glob
+import os
 import re
+
 import pandas as pd
 
-DATA = "daily_inputs"
+# yard exports land in daily_inputs with the date as the only varying part of the name,
+# the combined result is written to data
+DAILY = "daily_inputs"
+OUT = "data"
+
+
+def _latest(pattern):
+    hits = glob.glob(os.path.join(DAILY, pattern))
+    if not hits:
+        raise SystemExit(f"No file matching {pattern!r} in {DAILY}/")
+    return max(hits, key=os.path.getmtime)
+
 
 INBOUND = [
-    (f"{DATA}/2026 ytd milton inbound.csv", "Milton"),
-    (f"{DATA}/2026 ytd merriville inbound.csv", "Merrillville"),
+    (_latest("Inbound Milton*.csv"), "Milton"),
+    (_latest("Inbound Merrilville*.csv"), "Merrillville"),
 ]
 OUTBOUND = [
-    (f"{DATA}/2026 ytd milton outbound.csv", "Milton"),
-    (f"{DATA}/2026 ytd merriville outbound.csv", "Merrillville"),
+    (_latest("Outbound Milton*.csv"), "Milton"),
+    (_latest("Outbound Merrilville*.csv"), "Merrillville"),
 ]
 
 _BRACKET = re.compile(r"\[[^\]]*\]$")
 
 
+# strip the trailing bracket junk off a date column and parse it
 def parse_dt(series: pd.Series) -> pd.Series:
     cleaned = series.astype("string").str.replace(_BRACKET, "", regex=True)
     return pd.to_datetime(cleaned, utc=True, errors="coerce", format="mixed")
 
 
+# stack both yards together, sort by date, renumber the rows and write one combined file
 def merge(files, date_col, out_path, row_id_col):
     frames = []
     for path, location in files:
@@ -49,6 +65,6 @@ def merge(files, date_col, out_path, row_id_col):
 
 
 print("Inbound:")
-merge(INBOUND, "Effective Date", f"{DATA}/2026 ytd combined inbound.csv", "Inbound Row Id")
+merge(INBOUND, "Effective Date", f"{OUT}/2026 ytd combined inbound.csv", "Inbound Row Id")
 print("Outbound:")
-merge(OUTBOUND, "Date In", f"{DATA}/2026 ytd combined outbound.csv", "Outbound Row Id")
+merge(OUTBOUND, "Date In", f"{OUT}/2026 ytd combined outbound.csv", "Outbound Row Id")

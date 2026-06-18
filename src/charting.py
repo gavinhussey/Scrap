@@ -22,6 +22,7 @@ from src.var_model import var_table
 
 def render_risk_charts(results: RiskResults, per_commodity: bool = True) -> list[Path]:
     """Render every chart referenced by the HTML risk report."""
+    # first the whole book charts, one of each
     rendered: list[Path] = []
     merged_prices = {metal: results.prices[metal] for metal in results.mc_exposures}
 
@@ -35,6 +36,7 @@ def render_risk_charts(results: RiskResults, per_commodity: bool = True) -> list
         chart_aging(results.summary),
     ])
 
+    # then the same VaR, monte carlo and stress charts again for each metal on its own
     if per_commodity:
         for metal in sorted(results.exposures):
             exp_single = {metal: results.exposures[metal]}

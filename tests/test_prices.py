@@ -3,6 +3,7 @@ import pandas as pd
 from src import prices
 
 
+# the source summary should call out both synthetic series and proxied metals
 def test_price_source_summary_marks_synthetic_and_proxy(monkeypatch, tmp_path):
     dates = pd.bdate_range("2026-01-01", periods=120)
 
@@ -23,6 +24,7 @@ def test_price_source_summary_marks_synthetic_and_proxy(monkeypatch, tmp_path):
     assert sources["lead"] == "proxy:copper (synthetic)"
 
 
+# synthetic data must never pollute the real price cache
 def test_synthetic_fallback_does_not_write_real_cache(monkeypatch, tmp_path):
     dates = pd.bdate_range("2026-01-01", periods=120)
 
@@ -43,6 +45,7 @@ def test_synthetic_fallback_does_not_write_real_cache(monkeypatch, tmp_path):
     assert prices.price_source_summary()["copper"] == "synthetic"
 
 
+# a stale but real cache is still better than made up numbers
 def test_stale_real_cache_is_used_before_synthetic(monkeypatch, tmp_path):
     old_dates = pd.bdate_range("2025-01-01", periods=120)
     real_cache = pd.Series(range(200, 320), index=old_dates, name="copper")

@@ -11,10 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DAILY = ROOT / "daily_inputs"
+DATA = ROOT / "data"
 
 
 def _latest_inventory() -> Path | None:
-    files = sorted(DAILY.glob("combined inventory *.csv"))
+    files = sorted(DATA.glob("combined inventory *.csv")) or sorted(DAILY.glob("combined inventory *.csv"))
     return files[-1] if files else None
 
 
@@ -23,25 +24,27 @@ def _require(path: Path, label: str) -> None:
         raise SystemExit(f"Missing {label}: {path}")
 
 
+# the combined files live in data and are generated, the raw uploads live in daily_inputs
 def _require_inputs(skip_dtc: bool) -> None:
     inv = _latest_inventory()
     if inv is None:
-        raise SystemExit("Missing inventory snapshot: daily_inputs/combined inventory YYYYMMDD.csv")
+        raise SystemExit("Missing inventory snapshot: data/combined inventory YYYYMMDD.csv (run --merge-inventory)")
 
-    _require(DAILY / "2026 ytd combined inbound.csv", "combined inbound export")
-    _require(DAILY / "2026 ytd combined outbound.csv", "combined outbound export")
+    _require(DATA / "2026 ytd combined inbound.csv", "combined inbound export")
+    _require(DATA / "2026 ytd combined outbound.csv", "combined outbound export")
 
-    if not skip_dtc and not sorted(DAILY.glob("*DTC_raw_data*.csv")):
-        raise SystemExit("Missing DTC raw export: daily_inputs/*DTC_raw_data*.csv")
+    if not skip_dtc and not sorted(DAILY.glob("*DTC*raw*data*.csv")):
+        raise SystemExit("Missing DTC raw export: daily_inputs/*DTC*raw*data*.csv")
 
     print("Inputs:", flush=True)
     print(f"  inventory : {inv.relative_to(ROOT)}", flush=True)
-    print("  inbound   : daily_inputs/2026 ytd combined inbound.csv", flush=True)
-    print("  outbound  : daily_inputs/2026 ytd combined outbound.csv", flush=True)
+    print("  inbound   : data/2026 ytd combined inbound.csv", flush=True)
+    print("  outbound  : data/2026 ytd combined outbound.csv", flush=True)
     if not skip_dtc:
-        print(f"  dtc       : {sorted(DAILY.glob('*DTC_raw_data*.csv'))[-1].relative_to(ROOT)}", flush=True)
+        print(f"  dtc       : {sorted(DAILY.glob('*DTC*raw*data*.csv'))[-1].relative_to(ROOT)}", flush=True)
 
 
+# run one step as a subprocess and blow up loudly if it fails
 def _run(label: str, args: list[str]) -> None:
     env = os.environ.copy()
     env.setdefault("MPLCONFIGDIR", "/private/tmp")
@@ -63,25 +66,20 @@ def main() -> None:
         help="Skip DTC ticket matching.",
     )
     parser.add_argument(
-        "--merge-orders",
+        "--no-merge",
         action="store_true",
-        help="Rebuild combined inbound/outbound files from yard-level exports first.",
-    )
-    parser.add_argument(
-        "--merge-inventory",
-        action="store_true",
-        help="Rebuild combined inventory snapshot from yard inventory reports first.",
+        help="Skip rebuilding the combined files and reuse the existing ones in data/.",
     )
     args = parser.parse_args()
 
-    if args.merge_orders:
+    # merge fresh by default since the combined files are derived from the daily uploads
+    if not args.no_merge:
         _run("Merge yard inbound/outbound exports", [sys.executable, "data/merge_orders.py"])
-
-    if args.merge_inventory:
         _run("Merge yard inventory exports", [sys.executable, "data/merge_inventory.py"])
 
     _require_inputs(skip_dtc=args.skip_dtc)
 
+    # the actual pipeline, valuation then risk then html then dtc then tests
     _run("Update inventory valuation outputs", [sys.executable, "inventory_valuation.py"])
 
     risk_cmd = [sys.executable, "run_risk_model.py"]

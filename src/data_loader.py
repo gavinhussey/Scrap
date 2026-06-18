@@ -21,6 +21,7 @@ _INBOUND_REQUIRED = {
 }
 
 
+# strip the currency junk off a value and turn it into a number, never blow up
 def _parse_float(s: object) -> float:
     if s is None:
         return 0.0
@@ -33,6 +34,7 @@ def _parse_float(s: object) -> float:
         return 0.0
 
 
+# the date column is messy, try iso first then fall back to the old us format
 def parse_dates(raw: pd.Series) -> pd.Series:
     s = raw.astype(str).str.replace(r"\[[^\]]*\]\s*$", "", regex=True).str.strip()
     s = s.str.replace(r"\s+t$", "", regex=True)
@@ -47,14 +49,18 @@ def parse_dates(raw: pd.Series) -> pd.Series:
     return dt.dt.tz_localize(None).dt.normalize()
 
 
+# prefer a prebuilt combined file, otherwise grab the individual inbound exports
 def find_inbound_csvs(directory: Path | None = None) -> list[Path]:
-    directory = directory or DAILY_INPUT_DIR
-    combined = sorted(directory.glob("*combined*inbound*.csv"))
+    search = directory if directory is not None else DAILY_INPUT_DIR
+    combined = sorted(search.glob("*combined*inbound*.csv"))
+    if not combined and directory is None:
+        combined = sorted(DATA_DIR.glob("*combined*inbound*.csv"))
     if combined:
         return combined
-    return sorted(p for p in directory.glob(_INBOUND_GLOB) if "combined" not in p.name.lower())
+    return sorted(p for p in search.glob(_INBOUND_GLOB) if "combined" not in p.name.lower())
 
 
+# read one inbound csv into our standard lot shape and drop the unusable rows
 def _read_inbound_one(path: Path | str) -> pd.DataFrame:
     raw = pd.read_csv(path, dtype=str, keep_default_na=False)
     raw.columns = [c.strip() for c in raw.columns]
@@ -87,6 +93,7 @@ def _read_inbound_one(path: Path | str) -> pd.DataFrame:
     return df
 
 
+# read every inbound file and stack them into one sorted purchase history
 def load_inbound(paths: list[Path | str] | None = None) -> pd.DataFrame:
     if paths is None:
         paths = find_inbound_csvs()

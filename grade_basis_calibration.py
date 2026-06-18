@@ -10,6 +10,7 @@ import yfinance as yf
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
+DAILY = os.path.join(HERE, "daily_inputs")
 OUT = os.path.join(HERE, "output")
 
 _BRACKET = re.compile(r"\[[^\]]*\]$")
@@ -22,13 +23,20 @@ BASIS_HIGH_FLAG = 1.10
 MIN_TRADE_LBS = 200
 
 
+def _glob(pattern):
+    hits = glob.glob(os.path.join(DAILY, pattern))
+    return hits or glob.glob(os.path.join(DATA, pattern))
+
+
+# strip the tier suffix to get the base metal
 def _metal(commodity: object) -> str:
     return _TIER.sub("", str(commodity).strip().upper()) if pd.notna(commodity) else "UNKNOWN"
 
 
+# read the flow files into dated trade lines tagged with metal
 def _flow(pattern: str, value_col: str) -> pd.DataFrame:
     rows = []
-    for p in glob.glob(os.path.join(DATA, pattern)):
+    for p in _glob(pattern):
         if "combined" in os.path.basename(p):
             continue
         d = pd.read_csv(p, thousands=",")
@@ -48,6 +56,7 @@ def _flow(pattern: str, value_col: str) -> pd.DataFrame:
     return f
 
 
+# daily benchmark price per metal so each trade can be matched to its own day
 def benchmark_daily(start, end) -> dict:
     """date-indexed USD/lb series per benchmarked metal (ffilled over non-trading days)."""
     idx = pd.date_range(start.normalize(), end.normalize(), freq="D")
@@ -63,6 +72,7 @@ def benchmark_daily(start, end) -> dict:
     return out
 
 
+# latest benchmark price per metal for pricing grades as of today
 def benchmark_now() -> dict:
     out = {}
     for metal, (ticker, div) in BENCH.items():
@@ -71,6 +81,7 @@ def benchmark_now() -> dict:
     return out
 
 
+# stamp each trade with the benchmark price on the day it happened
 def _attach_bench(df: pd.DataFrame, bench: dict) -> pd.DataFrame:
     df = df.copy()
     df["bench"] = np.nan
@@ -80,6 +91,7 @@ def _attach_bench(df: pd.DataFrame, bench: dict) -> pd.DataFrame:
     return df
 
 
+# volume weighted basis and price per code, basis is trade value over benchmark value
 def _calib(df: pd.DataFrame) -> pd.DataFrame:
     """per-code volume-weighted basis (value / benchmark-value) and $/lb."""
     df = df.assign(benchval=df["bench"] * df["wt"])
@@ -91,6 +103,7 @@ def _calib(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# the main routine, calibrate every grade basis off our own buys and sales
 def calibrate() -> tuple[pd.DataFrame, dict, dict]:
     sale = _flow("2026 ytd *outbound.csv", "Expected Value")
     buy = _flow("2026 ytd *inbound.csv", "Cost")
@@ -102,7 +115,7 @@ def calibrate() -> tuple[pd.DataFrame, dict, dict]:
     s = _calib(_attach_bench(sale, bench))
     b = _calib(_attach_bench(buy, bench))
 
-    inv = pd.read_csv(glob.glob(os.path.join(DATA, "combined inventory*.csv"))[-1])
+    inv = pd.read_csv(_glob("combined inventory*.csv")[-1])
     inv_meta = inv.rename(columns={"Material Code": "code", "Material Name": "name",
                                    "Commodity Name": "commodity", "Commodity Type": "ctype"})
     meta = (pd.concat([inv_meta[["code", "name", "commodity", "ctype"]],
@@ -111,6 +124,7 @@ def calibrate() -> tuple[pd.DataFrame, dict, dict]:
             .dropna(subset=["code"]).drop_duplicates("code").set_index("code"))
     meta["metal"] = meta["commodity"].map(_metal)
 
+    # where a grade has both buys and sales, measure the buy to sale margin uplift
     both = s[["basis", "wt"]].join(b[["basis"]], rsuffix="_buy", how="inner").dropna()
     both = both.join(meta["metal"])
     both = both[both["metal"].isin(BENCH)]
@@ -131,6 +145,7 @@ def calibrate() -> tuple[pd.DataFrame, dict, dict]:
     return _assemble(meta, s, b, uplift, overall, comm_avg, metal_avg, now), now, uplift
 
 
+# build the final per grade table, picking the best basis source available for each
 def _assemble(meta, s, b, uplift, overall, comm_avg, metal_avg, now) -> pd.DataFrame:
     rows = []
     for code, m in meta.iterrows():
@@ -141,6 +156,7 @@ def _assemble(meta, s, b, uplift, overall, comm_avg, metal_avg, now) -> pd.DataF
         source = "none"
         n = lbs = 0
 
+        # benched metals get a basis, prefer real sales then buys then modelled averages
         if benched:
             if code in s.index and s.at[code, "benchval"] > 0:
                 basis, source = s.at[code, "basis"], "sale"
@@ -163,6 +179,7 @@ def _assemble(meta, s, b, uplift, overall, comm_avg, metal_avg, now) -> pd.DataF
                 ref_price, source, n, lbs = b.at[code, "price"], "absolute (buy)", int(b.at[code, "n"]), b.at[code, "wt"]
             price_now = ref_price
 
+        # flag anything that needs a human eye, suspect basis, modelled, or thin volume
         flag = ""
         if pd.notna(basis) and basis > BASIS_HIGH_FLAG:
             flag = "basis>benchmark (review)"
@@ -188,6 +205,7 @@ def main() -> None:
     path = os.path.join(OUT, "grade_basis_calibration.csv")
     table.to_csv(path, index=False)
 
+    # write the summary text, source counts, flags and a sample of the strongest grades
     L = []
     L.append("GRADE BASIS CALIBRATION  (grade $/lb = basis x benchmark $/lb)")
     L.append("=" * 70)

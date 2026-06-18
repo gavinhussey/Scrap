@@ -1,6 +1,7 @@
 from src.config import ASSUMPTIONS
 
 
+# every assumption must carry its full review metadata, no blanks
 def test_assumptions_have_review_metadata():
     required = {"value", "source", "confidence", "last_reviewed", "rationale"}
 

@@ -22,6 +22,7 @@ CODE_EQUIV = {"FETURN": {"FETURN", "TURNSTEEL"}, "TURNSTEEL": {"FETURN", "TURNST
 ROSTER_ALIAS = {"ZZ DO NOT USE ALUMINUM BREAKAGE": "ZZ DO NOT USE - ALUMINUM TURNINGS"}
 
 
+# clean the commas and dollar signs out of a column and make it numeric
 def _num(s):
     return pd.to_numeric(s.astype(str).str.replace(",", "").str.replace("$", ""), errors="coerce")
 
@@ -66,6 +67,7 @@ def _load_transport_roster(path):
     return set(df["_mat"]), {c.strip().upper() for c in companies}, mat_to_co
 
 
+# match every DTC order to its outbound ticket, then hunt down the matching inbound twin
 def main():
     dtc = pd.read_csv(os.path.join(ROOT, "daily_inputs", "Copy of MASTER ____ BMR-MMR Dashboard v11 - DTC_raw_data.csv"), dtype=str)
     inb = pd.read_csv(os.path.join(ROOT, "daily_inputs", "2026 ytd combined inbound.csv"), dtype=str)
@@ -84,6 +86,7 @@ def main():
     inb["csv_row"] = inb.index + 2
     out["csv_row"] = out.index + 2
 
+    # collapse inbound into one row per ticket, keeping its supplier and source rows
     itix = inb.groupby(["Material Code", "Location", "Ticket #"], as_index=False).agg(
         net=("net", "sum"), date=("date", "min"),
         supplier=("Customer Name", "first"), vendor_class=("Vendor Class", "first"),
@@ -92,6 +95,7 @@ def main():
     sup = itix.set_index("tid")[["supplier", "vendor_class"]]
     rid_by_tid = itix.set_index("tid")["row_ids"].to_dict()
 
+    # first pass, find each order's outbound ticket and set up its inbound search window
     recs = []
     for _, o in dtc.iterrows():
         W = o["net"]
@@ -128,6 +132,7 @@ def main():
             rec["_ship"] = ship
         recs.append(rec)
 
+    # work oldest first so each inbound ticket only gets claimed once
     consumed = set()
     order = sorted(range(len(recs)),
                    key=lambda i: recs[i].get("_ship", pd.Timestamp.max))
@@ -135,6 +140,7 @@ def main():
     def avail(c):
         return c[~c["tid"].isin(consumed)] if c is not None else None
 
+    # pass 1, claim an inbound ticket whose net matches exactly inside the day window
     for i in order:
         r = recs[i]; c = avail(r["_cand"])
         if c is None or not len(c):
@@ -147,6 +153,7 @@ def main():
             r.update(in_method="exact net", in_match=f"#{pick['Ticket #']}", in_csv_row=pick["row_ids"],
                      in_total=round(pick["net"]), _intid=pick["tid"])
 
+    # pass 2, try to hit the target weight as a sum of several smaller tickets
     for i in order:
         r = recs[i]
         if r["in_method"] != "NONE":
@@ -163,6 +170,7 @@ def main():
                      in_csv_row=";".join(rid_by_tid.get(tid, "") for tid, *_ in s),
                      in_total=sum(int(round(w)) for _, w, _ in s))
 
+    # pass 3, last resort, widen past the same day window and note how far off it landed
     for i in order:
         r = recs[i]
         if r["in_method"] != "NONE" or r.get("_pool") is None:
@@ -179,6 +187,7 @@ def main():
             r.update(in_method="exact net (outside same-day)", in_match=f"#{pick['Ticket #']}",
                      in_csv_row=pick["row_ids"], in_total=round(pick["net"]), _gap=gap, _intid=pick["tid"])
 
+    # attach the inbound supplier and flag it when supplier and consumer are the same party
     for r in recs:
         r.update(supplier="", supplier_class="", supplier_check="", confidence="")
         tid = r.get("_intid")
@@ -192,6 +201,7 @@ def main():
         same = str(row["supplier"]).strip().lower() == str(r["consumer"]).strip().lower()
         r["supplier_check"] = "SUSPECT: supplier==consumer" if same else "ok (distinct counterparties)"
 
+    # grade every match high medium or low and record why it failed when it did
     no_twin = set(_no_inbound_twin_anywhere(dtc, inb, out))
     for r in recs:
         m = r["in_method"]
@@ -211,8 +221,6 @@ def main():
             r["exception_reason"] = "net twin exists only under a different material/yard (coincidental)"
 
     # BMR Transport roster filter: a material absent from the roster cannot be a DTC
-    # order at all (drop it from the chase); for genuine missing legs whose material IS
-    # in the roster, name the supplier companies that ship it so they can be chased.
     for r in recs:
         mat = str(r["material"]).strip().upper()
         mat = ROSTER_ALIAS.get(mat, mat)
@@ -226,12 +234,14 @@ def main():
         elif r["in_method"] == "NONE":
             r["chase_suppliers"] = "; ".join(sorted(mat_to_co.get(mat, set())))
 
+    # flatten the records to a frame and write the full matches and the exceptions
     res = pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in recs])
     out_cols = [c for c in res.columns if c != "confidence"]
     res[out_cols].to_csv(os.path.join(HERE, "dtc_weight_matches.csv"), index=False)
     exc = res[res["exception_reason"] != ""].copy()
     exc[out_cols].to_csv(os.path.join(HERE, "dtc_match_exceptions.csv"), index=False)
 
+    # print the run summary, match counts and the missing legs still worth chasing
     n = len(res)
     print(f"DTC orders: {n}\n")
     print("OUTBOUND match:")

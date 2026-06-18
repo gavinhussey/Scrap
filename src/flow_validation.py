@@ -15,6 +15,7 @@ def build_flow_validation(snapshot_inventory: pd.DataFrame) -> tuple[pd.DataFram
     exists to expose whether YTD inbound/outbound flow files reconcile cleanly or
     contain opening-balance/transfer effects that make netting unreliable.
     """
+    # roll snapshot, inbound and outbound up to metal level so we can line them up
     inbound = load_inbound()
     outbound = load_outbound()
     _, _, recon_metal, margin = current_inventory()
@@ -36,6 +37,7 @@ def build_flow_validation(snapshot_inventory: pd.DataFrame) -> tuple[pd.DataFram
         .rename(columns={"quantity_tonnes": "outbound_t"})
     )
 
+    # does buys minus sales actually match the physical snapshot, flag where it doesn't
     validation = (
         snapshot.merge(inb, on="metal", how="outer")
         .merge(out, on="metal", how="outer")
@@ -60,6 +62,7 @@ def build_flow_validation(snapshot_inventory: pd.DataFrame) -> tuple[pd.DataFram
     ]
     validation = validation[cols].sort_values("snapshot_t", ascending=False).reset_index(drop=True)
 
+    # and what we actually earned per metal on everything already sold
     margin_by_metal = (
         margin.groupby("metal", as_index=False)
         .agg(
@@ -77,6 +80,7 @@ def build_flow_validation(snapshot_inventory: pd.DataFrame) -> tuple[pd.DataFram
     return validation, margin_by_metal.reset_index(drop=True)
 
 
+# combine realized margin with unrealised mtm for one economic signal per metal
 def economic_reconciliation(mtm_df: pd.DataFrame, margin_by_metal: pd.DataFrame) -> pd.DataFrame:
     unreal = (
         mtm_df.groupby("metal", as_index=False)

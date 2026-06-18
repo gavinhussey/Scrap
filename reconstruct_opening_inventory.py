@@ -8,12 +8,18 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
+DAILY = os.path.join(HERE, "daily_inputs")
 OUT = os.path.join(HERE, "output")
 
 _TIER = re.compile(r"\s*TIER\s*\d+\s*$", re.I)
 _BRACKET = re.compile(r"\[[^\]]*\]$")
 
 MARKET_WINDOW_DAYS = 60
+
+
+def _glob(pattern):
+    hits = glob.glob(os.path.join(DAILY, pattern))
+    return hits or glob.glob(os.path.join(DATA, pattern))
 
 
 def _location(path: str) -> str:
@@ -26,14 +32,13 @@ def _location(path: str) -> str:
 
 
 def _metal(commodity_name: object) -> str:
-    """Roll a commodity name up to its metal (strip the 'TIER n' suffix)."""
     if pd.isna(commodity_name):
         return "UNKNOWN"
     return _TIER.sub("", str(commodity_name).strip().upper())
 
 
 def _latest_inventory() -> str:
-    files = sorted(glob.glob(os.path.join(DATA, "combined inventory*.csv")))
+    files = sorted(_glob("combined inventory*.csv"))
     if not files:
         raise SystemExit("Run data/merge_inventory.py first (no combined inventory file).")
     return files[-1]
@@ -50,7 +55,7 @@ def load_inventory() -> pd.DataFrame:
 
 def _sum_flow(pattern: str, code_col: str, name_col: str) -> pd.DataFrame:
     frames = []
-    for p in glob.glob(os.path.join(DATA, pattern)):
+    for p in _glob(pattern):
         if "combined" in os.path.basename(p):
             continue
         d = pd.read_csv(p, thousands=",")
@@ -110,7 +115,7 @@ def build() -> tuple[pd.DataFrame, pd.DataFrame]:
 def _flow_lines(pattern: str, value_col: str) -> pd.DataFrame:
     """Line-level (code, $ value, lbs, date) for a flow, for $/lb pricing."""
     frames = []
-    for p in glob.glob(os.path.join(DATA, pattern)):
+    for p in _glob(pattern):
         if "combined" in os.path.basename(p):
             continue
         d = pd.read_csv(p, thousands=",")
@@ -156,11 +161,7 @@ def market_prices(avg_cost_by_code: pd.Series) -> pd.DataFrame:
 
 
 def portfolio_weights(by_grade: pd.DataFrame, prices: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Each held item's share of the EOY-2025 book, by value and by weight.
-
-    Held = opening weight floored at zero per yard/grade (no negative holdings);
-    value = held lbs x current Average Cost. Items are summed across yards into
-    one company-wide portfolio."""
+    
     df = by_grade.copy()
     df["held_wt"] = df["opening_wt"].clip(lower=0)
 

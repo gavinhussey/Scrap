@@ -14,6 +14,7 @@ import pandas as pd
 from src.config import CHARTS_DIR, HOLDING_PERIOD_DAYS
 
 
+# little money formatters, one shows the sign and one is always positive
 def _fmt_usd(v: float) -> str:
     sign = "-" if v < 0 else "+"
     return f"{sign}${abs(v):,.0f}" if v != 0 else f"${v:,.0f}"
@@ -23,6 +24,7 @@ def _fmt_pos(v: float) -> str:
     return f"${v:,.0f}"
 
 
+# console table of the whole book marked to market, with a totals row
 def print_inventory(summary_df: pd.DataFrame, total_mtm: float, total_pnl: float) -> None:
     print("\n" + "=" * 80)
     print("  SCRAPYARD RISK MODEL")
@@ -55,6 +57,7 @@ def print_inventory(summary_df: pd.DataFrame, total_mtm: float, total_pnl: float
           f" {'':>9}")
 
 
+# console VaR table, every method at every confidence level
 def print_var(var_df: pd.DataFrame) -> None:
     print("\n── VALUE AT RISK ───────────────────────────────────────────────────")
     print(f"  {'Confidence':<12} {'Method':<15} {'VaR':>12} {'CVaR (ES)':>12} {'Divers. Benefit':>18}")
@@ -69,6 +72,7 @@ def print_var(var_df: pd.DataFrame) -> None:
         )
 
 
+# monte carlo summary, one row per horizon
 def print_mc_horizons(mc_results: list[dict], horizons: list[int]) -> None:
     print("\n── MONTE CARLO — MULTI-HORIZON SUMMARY ────────────────────────────────")
     print(f"  {'Horizon':<10} {'Median':>14} {'5th Pctile':>14} {'95th Pctile':>14} {'P(Loss)':>9} {'MC VaR 95%':>12} {'MC CVaR 95%':>13}")
@@ -86,6 +90,7 @@ def print_mc_horizons(mc_results: list[dict], horizons: list[int]) -> None:
         )
 
 
+# fuller monte carlo readout for the headline horizon, full percentile ladder
 def print_monte_carlo(mc_result: dict) -> None:
     print("\n── MONTE CARLO SIMULATION ──────────────────────────────────────────")
     print(f"  Initial Portfolio Value : {_fmt_pos(mc_result['initial_value'])}")
@@ -103,6 +108,7 @@ def print_monte_carlo(mc_result: dict) -> None:
         print(f"  {pct:>3}th pctile   {_fmt_pos(val):>16} {_fmt_usd(val - init):>16}")
 
 
+# console stress table plus the best and worst case callouts
 def print_scenarios(scenario_df: pd.DataFrame, ws: dict) -> None:
     print("\n── STRESS SCENARIOS ────────────────────────────────────────────────")
     metal_cols = [c for c in scenario_df.columns if c.endswith("_pnl") and c != "total_pnl"]
@@ -126,6 +132,7 @@ def print_scenarios(scenario_df: pd.DataFrame, ws: dict) -> None:
 
 # Charts
 
+# write a figure out to the charts folder and close it so we don't leak memory
 def _save(fig: plt.Figure, name: str) -> Path:
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
     path = CHARTS_DIR / f"{name}.png"
@@ -134,6 +141,7 @@ def _save(fig: plt.Figure, name: str) -> Path:
     return path
 
 
+# one price line per metal, with the current level tagged on the right axis
 def chart_price_history(prices: dict[str, pd.Series]) -> Path:
     metals = list(prices.keys())
     n = len(metals)
@@ -171,6 +179,7 @@ def chart_price_history(prices: dict[str, pd.Series]) -> Path:
     return _save(fig, "price_history")
 
 
+# return histogram per metal against a normal fit, with the 5th percentile marked
 def chart_return_distributions(returns: dict[str, pd.Series]) -> Path:
     from scipy.stats import norm
 
@@ -211,6 +220,7 @@ def chart_return_distributions(returns: dict[str, pd.Series]) -> Path:
     return _save(fig, "return_distributions")
 
 
+# draw one monte carlo fan, sample paths plus shaded percentile bands and a median
 def _draw_mc_panel(ax: plt.Axes, mc_result: dict) -> None:
     from matplotlib.transforms import blended_transform_factory, offset_copy
 
@@ -244,6 +254,7 @@ def _draw_mc_panel(ax: plt.Axes, mc_result: dict) -> None:
     ax.grid(axis="y", alpha=0.3)
     ax.spines[["top", "right"]].set_visible(False)
 
+    # if the median ends up sitting right on top of today, nudge its label clear
     y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
     nudge_needed = abs(pcts[50][-1] - init) < y_range * 0.03
     median_label_pos = init + y_range * 0.03 if nudge_needed else pcts[50][-1]
@@ -292,6 +303,7 @@ def _draw_mc_panel(ax: plt.Axes, mc_result: dict) -> None:
     ax_r.tick_params(axis="y", length=4, width=0.8)
 
 
+# grid of fan charts, one panel per horizon
 def chart_monte_carlo(mc_results: list[dict], label: str = "") -> Path:
     n = len(mc_results)
     ncols = 2
@@ -317,6 +329,7 @@ def chart_monte_carlo(mc_results: list[dict], label: str = "") -> Path:
     return _save(fig, name)
 
 
+# horizontal bars of pnl per stress scenario, red for losses green for gains
 def chart_scenarios(scenario_df: pd.DataFrame, label: str = "") -> Path:
     fig, ax = plt.subplots(figsize=(10, 5))
     colors = ["#d62728" if v < 0 else "#2ca02c" for v in scenario_df["total_pnl"]]
@@ -335,6 +348,7 @@ def chart_scenarios(scenario_df: pd.DataFrame, label: str = "") -> Path:
     return _save(fig, name)
 
 
+# stacked bars of book cost plus unrealised gain per metal, sorted by mtm value
 def chart_commodity_breakdown(summary_df: pd.DataFrame) -> Path:
     
     def _abbrev(v: float) -> str:
@@ -401,6 +415,7 @@ def chart_commodity_breakdown(summary_df: pd.DataFrame) -> Path:
     return _save(fig, "commodity_breakdown")
 
 
+# grouped bars comparing VaR against CVaR across methods at 95 percent
 def chart_var_summary(var_df: pd.DataFrame, label: str = "") -> Path:
     pivot = var_df[var_df["confidence"] == "95%"].set_index("method")[["portfolio_var", "portfolio_cvar"]]
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -432,8 +447,10 @@ def chart_var_summary(var_df: pd.DataFrame, label: str = "") -> Path:
     return _save(fig, name)
 
 
+# two bar charts side by side, average days held and oldest lot per metal
 def chart_aging(summary_df: pd.DataFrame) -> Path:
 
+    # green under a month, amber up to two, red past that
     def _aging_color(days: float) -> str:
         if days <= 30:
             return "#059669"

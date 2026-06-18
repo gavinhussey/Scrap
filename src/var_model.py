@@ -12,6 +12,7 @@ def _scale_to_horizon(one_day_var: float, horizon: int) -> float:
     return one_day_var * np.sqrt(horizon)
 
 
+# normal distribution VaR, fast but assumes well behaved returns
 def parametric_var(
     exposure: float,
     returns: pd.Series,
@@ -28,6 +29,7 @@ def parametric_var(
     return var_nh, cvar_nh
 
 
+# same idea but the vol leans on recent days so it reacts to current swings
 def ewma_var(
     exposure: float,
     returns: pd.Series,
@@ -47,6 +49,7 @@ def ewma_var(
     return var_nh, cvar_nh
 
 
+# no distribution assumed, just replay actual past moves and read off the tail
 def historical_var(
     exposure: float,
     returns: pd.Series,
@@ -72,6 +75,7 @@ def historical_var(
     return var, cvar
 
 
+# whole-book VaR across metals, nets correlations so diversification shows up
 def portfolio_var(
     exposures: dict[str, float],
     returns_map: dict[str, pd.Series],
@@ -105,6 +109,7 @@ def portfolio_var(
             v, cv = historical_var(exp, r, confidence, horizon)
         per_metal[metal] = {"var": v, "cvar": cv}
 
+    # now the portfolio number, build a covariance matrix and squeeze it through the weights
     weights = np.array([exposures[m] for m in metals])
     if method == "ewma":
         ewma_vols = np.array([ewma_volatility(aligned[m], EWMA_LAMBDA) for m in metals])
@@ -142,6 +147,7 @@ def portfolio_var(
     }
 
 
+# run every method at every confidence level and lay it out as one table for the report
 def var_table(
     exposures: dict[str, float],
     returns_map: dict[str, pd.Series],

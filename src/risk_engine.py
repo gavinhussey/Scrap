@@ -26,6 +26,7 @@ from src.scenarios import run_scenarios, worst_case_summary
 from src.var_model import var_table
 
 
+# everything build_market_risk produces bundled into one object
 @dataclass
 class RiskResults:
     prices: dict[str, pd.Series]
@@ -54,6 +55,7 @@ class RiskResults:
     model_warnings: list[str]
 
 
+# flag anything dodgy about the inputs like synthetic/proxy prices or unpriced stock
 def _model_warnings(
     price_sources: dict[str, str],
     mtm: pd.DataFrame,
@@ -76,6 +78,7 @@ def _model_warnings(
     return warnings
 
 
+# how much of the book is actually priced, plus single-metal concentration
 def _data_quality_metrics(mtm: pd.DataFrame, exposures: dict[str, float]) -> dict[str, float]:
     total_tonnes = float(mtm["quantity_tonnes"].sum())
     priced = mtm[mtm["valuation_confidence"] != "Unpriced"]
@@ -91,6 +94,7 @@ def _data_quality_metrics(mtm: pd.DataFrame, exposures: dict[str, float]) -> dic
     }
 
 
+# roll the warnings/coverage up into one traffic light status
 def _status(
     price_sources: dict[str, str],
     validation_warnings: list[str],
@@ -116,6 +120,7 @@ def build_market_risk(
     if horizons is None:
         horizons = [30, 60, 90, 180]
 
+    # prices -> mark inventory -> exposures
     prices = fetch_all_prices(force_refresh=refresh)
     risk_prices = {metal: risk_series(metal, series) for metal, series in prices.items()}
     spot_prices = {metal: float(series.iloc[-1]) for metal, series in prices.items()}
@@ -127,12 +132,14 @@ def build_market_risk(
     total_pnl = float(mtm["unrealised_pnl"].sum())
     exposures = exposure_by_metal(mtm)
 
+    # run the actual risk math, VaR, monte carlo per horizon, stress scenarios
     returns_map = {metal: daily_returns(risk_prices[metal]) for metal in exposures}
     mc_exposures, mc_returns = merge_exposures_by_driver(exposures, returns_map)
     var_df = var_table(mc_exposures, mc_returns)
     mc_results = [simulate(mc_exposures, risk_prices, horizon=h, seed=42) for h in horizons]
     scenario_df = run_scenarios(exposures)
 
+    # collect provenance + quality flags before packaging it all up
     price_sources = price_source_summary()
     validation_warnings = snapshot_validation_warnings()
     synthetic = sorted(m for m, source in price_sources.items() if "synthetic" in source)

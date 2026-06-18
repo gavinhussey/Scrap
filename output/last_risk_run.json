@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-16T13:26:11",
+  "generated_at": "2026-06-18T12:49:13",
   "model_status": "degraded",
-  "total_book": 462163.2611,
-  "total_mtm": 793699.2394999999,
-  "total_risk_exposure": 832958.1329235528,
-  "var_95_parametric": 120883.02348895899,
-  "priced_tonnes_pct": 0.9869325721605949,
-  "unpriced_risk_exposure": 91350.72747355272
+  "total_book": 427588.2005,
+  "total_mtm": 786193.2494,
+  "total_risk_exposure": 863422.1376574837,
+  "var_95_parametric": 124264.06709043031,
+  "priced_tonnes_pct": 0.9810182887187845,
+  "unpriced_risk_exposure": 129968.5078004837
 }
