@@ -28,8 +28,8 @@ def _metal(name: object) -> str:
 
 def load_eoy2025() -> pd.DataFrame:
     frames = []
-    for path, yard in [("merrilolville inv summary 2025-12-31.csv", "Merrillville"),
-                       ("mitlon inv summary 2025-12-31.csv", "Milton")]:
+    for path, yard in [("reference/merrillville_inventory_2025-12-31.csv", "Merrillville"),
+                       ("reference/milton_inventory_2025-12-31.csv", "Milton")]:
         d = pd.read_csv(os.path.join(DATA, path), thousands=",")
         d.columns = [c.replace("\n", " ").strip() for c in d.columns]
         frames.append(pd.DataFrame({
@@ -174,7 +174,6 @@ def main() -> None:
     e_metal, c_metal = by_metal(eoy, "mkt"), by_metal(cur, "mkt")
 
     today_label = _today_label()
-    L, A = [], lambda s: None
     out = []
     A = out.append
     A(f"INVENTORY VALUATION — COST vs MARKET, EOY-2025 and TODAY ({today_label})")

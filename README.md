@@ -71,10 +71,48 @@ The inventory/risk scripts estimate market exposure and portfolio risk for inven
 Key files:
 
 - `run_risk_model.py`
-- `reconstruct_opening_inventory.py`
+- `calc_inventory_from_flows.py` - current inventory from EOY-2025 balances + YTD flows
 - `grade_basis_calibration.py`
-- `value_eoy2025_market.py`
 - `src/`
+
+One-time EOY-2025 reconstruction analyses live in `archive/eoy2025/`. Static reference
+inputs (EOY closing balances) live in `data/reference/`.
+
+### Sell-Signal Data Pipeline
+
+Maps each scrap material to free market proxies (futures/ETF/FRED), then builds
+correlation, hedge, feature, and forward-target tables as a foundation for a future
+supervised sell-signal model.
+
+Two ways to run it:
+
+Run from the project root:
+
+```sh
+# (a) Proxy-only mode — materials ARE their market proxies. Single-proxy materials
+#     correlate 1.0 BY CONSTRUCTION (flagged as structural_identity in the output);
+#     only the multi-component baskets (brass, stainless) are genuine. Needs network.
+python sell_signal/pipeline.py
+
+# (b) Real-price mode (recommended) — builds a fixed-weight weekly scrap-price panel
+#     from your outbound sale tickets, then correlates REAL scrap prices vs proxies.
+python sell_signal/run_real.py
+```
+
+Key files (in `sell_signal/`):
+
+- `pipeline.py` - the data/feature pipeline: proxy mapping, correlation, hedge, features,
+  and forward targets, plus charts and a self-contained HTML report.
+- `build_scrap_prices.py` - turns outbound sale tickets into a fixed-weight weekly `$/lb`
+  price panel (`output/sell_signal/scrap_material_prices.csv`). Prices each grade tier,
+  forward-fills it, then combines tiers with constant volume-share weights so the index
+  moves with price, not grade mix.
+- `run_real.py` - builds that panel and runs the pipeline on it via
+  `Config.material_price_csv`, with weekly windows sized for the current short history.
+- Outputs land in `output/sell_signal/` (CSVs, charts, and a self-contained HTML report).
+
+> Note: the internal sale history is currently ~6 months (~25 weekly points), so
+> correlations/betas are indicative only — re-estimate as history accumulates.
 
 ## Setup
 

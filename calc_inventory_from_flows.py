@@ -23,7 +23,7 @@ def _latest(pattern: str) -> str:
 def load_eoy_2025() -> pd.DataFrame:
     """EOY-2025 closing weight per yard/material code, from the GreenSpark closing-balance exports."""
     frames = []
-    for path in glob.glob(os.path.join(DATA, "*2025-12-31*.csv")):
+    for path in glob.glob(os.path.join(DATA, "reference", "*2025-12-31*.csv")):
         d = pd.read_csv(path)
         d["Location"] = d["Yard Name"].str.title()  # "MILTON" -> "Milton", matches flow/inventory file casing
         frames.append(d[["Location", "Material Code", "Commodity", "Commodity Type", "Closing Weight"]])

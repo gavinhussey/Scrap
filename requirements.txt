@@ -3,5 +3,5 @@ pandas>=2.0.0
 numpy>=1.24.0
 scipy>=1.10.0
 matplotlib>=3.7.0
-statsmodels>=0.14.0
-rapidfuzz>=3.0.0
+statsmodels>=0.14.0  # OLS hedge regressions in scrap_metals_sell_signal_data_pipeline.py
+certifi>=2023.7.22   # CA bundle for keyless FRED HTTPS fetches (bare python.org installs)
