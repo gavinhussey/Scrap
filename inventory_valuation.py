@@ -17,6 +17,9 @@ EOY = "2025-12-31"
 JAN_END = "2026-02-01"
 RECENT_DAYS = 60
 PROXY = {"COPPER": "HG=F", "STEEL": "HRC=F", "ALUMINUM": "ALI=F", "BRASS": "HG=F"}
+# COMEX copper full contract size (lbs). Used to size a copper-price hedge.
+COMEX_COPPER_CONTRACT_LB = 25_000
+COMEX_COPPER_TICKER = "HG=F"
 
 
 def _metal(name: object) -> str:
@@ -28,8 +31,8 @@ def _metal(name: object) -> str:
 
 def load_eoy2025() -> pd.DataFrame:
     frames = []
-    for path, yard in [("merrilolville inv summary 2025-12-31.csv", "Merrillville"),
-                       ("mitlon inv summary 2025-12-31.csv", "Milton")]:
+    for path, yard in [("reference/merrillville_inventory_2025-12-31.csv", "Merrillville"),
+                       ("reference/milton_inventory_2025-12-31.csv", "Milton")]:
         d = pd.read_csv(os.path.join(DATA, path), thousands=",")
         d.columns = [c.replace("\n", " ").strip() for c in d.columns]
         frames.append(pd.DataFrame({
@@ -141,6 +144,85 @@ def futures_factors() -> tuple[dict, dict]:
 
 
 
+def live_factors() -> tuple[dict, dict]:
+    """Per-proxy (recent-window avg close, latest close, roll-FORWARD factor).
+
+    The roll-forward factor = live / recent_avg lets us re-mark each grade's
+    realised sale price to *today's* live futures price, so the inventory mark
+    moves daily with COMEX even when there have been no fresh sales. The
+    recent window matches RECENT_DAYS so it aligns with the sale-price anchor.
+    """
+    try:
+        import yfinance as yf
+    except Exception:
+        return {}, {}
+    start = (pd.Timestamp.today() - pd.Timedelta(days=RECENT_DAYS + 15)).strftime("%Y-%m-%d")
+    detail = {}
+    for ticker in set(PROXY.values()):
+        try:
+            d = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+            c = d["Close"].squeeze().dropna()
+            if c.empty:
+                continue
+            live = float(c.iloc[-1])
+            window = c[c.index >= c.index.max() - pd.Timedelta(days=RECENT_DAYS)]
+            recent_avg = float(window.mean())
+            if recent_avg > 0:
+                detail[ticker] = (recent_avg, live, live / recent_avg)
+        except Exception:
+            pass
+    factors = {m: detail[t][2] for m, t in PROXY.items() if t in detail}
+    return factors, detail
+
+
+def comex_mark(cur: pd.DataFrame, live_detail: dict) -> pd.DataFrame:
+    """Add a daily COMEX-linked mark to `cur` (which already has `price`/`mkt`).
+
+      realization      = sale price / proxy recent-avg   (sticky scrap discount)
+      comex_price      = sale price * (proxy_live / proxy_recent_avg)
+                       = realization * proxy_live         (re-marks to today)
+      comex_mkt        = wt * comex_price
+    """
+    recent_avg = {m: live_detail[t][0] for m, t in PROXY.items() if t in live_detail}
+    factor = {m: live_detail[t][2] for m, t in PROXY.items() if t in live_detail}
+    cur = cur.copy()
+    cur["proxy_recent_avg"] = cur["metal"].map(recent_avg)
+    cur["live_factor"] = cur["metal"].map(factor).fillna(1.0)
+    cur["realization"] = (cur["price"] / cur["proxy_recent_avg"]).round(4)
+    cur["comex_price"] = (cur["price"] * cur["live_factor"]).round(4)
+    cur["comex_mkt"] = (cur["wt"] * cur["comex_price"]).round(2)
+    return cur
+
+
+def copper_exposure(cur: pd.DataFrame, live_detail: dict) -> dict:
+    """Copper-price exposure of the inventory and a suggested COMEX hedge.
+
+    Mark ∝ COMEX live, so ∂(copper mark)/∂COMEX = Σ wt*realization
+    = copper_mkt / comex_live  (COMEX-equivalent pounds). One full HG=F
+    contract = 25,000 lb, so short that many equivalent-pounds / 25,000.
+    """
+    cu_metals = [m for m, t in PROXY.items() if t == COMEX_COPPER_TICKER]
+    cu = cur[cur["metal"].isin(cu_metals)]
+    copper_mkt = float(cu["comex_mkt"].sum())
+    comex_live = live_detail.get(COMEX_COPPER_TICKER, (None, None, None))[1]
+    if not comex_live or copper_mkt <= 0:
+        return {}
+    equiv_lbs = copper_mkt / comex_live          # COMEX-copper-equivalent pounds
+    wt_real = ((cu["wt"] * cu["realization"]).sum() / cu["wt"].sum()
+               if cu["wt"].sum() else float("nan"))
+    return {
+        "copper_metals": cu_metals,
+        "copper_weight_lb": float(cu["wt"].sum()),
+        "copper_mkt": copper_mkt,
+        "comex_live_usd_lb": comex_live,
+        "wt_avg_realization": wt_real,
+        "equiv_lbs": equiv_lbs,
+        "exposure_per_1pct": copper_mkt * 0.01,        # $ change per 1% COMEX move
+        "exposure_per_1c_lb": equiv_lbs * 0.01,        # $ change per 1¢/lb COMEX move
+        "hedge_contracts": equiv_lbs / COMEX_COPPER_CONTRACT_LB,
+    }
+
+
 def by_metal(df: pd.DataFrame, value_col: str) -> pd.DataFrame:
     g = (df.groupby("metal", as_index=False)
          .agg(wt=("wt", "sum"), cost=("cost", "sum"), mkt=(value_col, "sum"))
@@ -163,6 +245,11 @@ def main() -> None:
     cur["price"] = cur["price"].fillna(0.0)
     cur["mkt"] = (cur["wt"] * cur["price"]).round(2)
 
+    # daily COMEX-linked mark + copper-price exposure
+    live_factor, live_detail = live_factors()
+    cur = comex_mark(cur, live_detail)
+    exposure = copper_exposure(cur, live_detail)
+
     eoy = eoy.merge(janp.rename("jan_price"), left_on="code", right_index=True, how="left")
     eoy["jan_price"] = eoy["jan_price"].fillna(0.0)
     eoy["factor"] = eoy["metal"].map(factors).fillna(1.0)
@@ -174,7 +261,6 @@ def main() -> None:
     e_metal, c_metal = by_metal(eoy, "mkt"), by_metal(cur, "mkt")
 
     today_label = _today_label()
-    L, A = [], lambda s: None
     out = []
     A = out.append
     A(f"INVENTORY VALUATION — COST vs MARKET, EOY-2025 and TODAY ({today_label})")
@@ -205,6 +291,37 @@ def main() -> None:
               f"{r['cost_wt_pct']:>7.1f}%{r['mkt_wt_pct']:>7.1f}%{r['mkt']-r['cost']:>12,.0f}")
         A(f"  {'TOTAL':<16}{tot_c:>12,.0f}{tot_m:>12,.0f}{'':>8}{'':>8}{tot_m-tot_c:>12,.0f}")
         A("")
+
+    # ---- daily COMEX mark-to-market & copper-price exposure ----------------
+    A("DAILY COMEX MARK-TO-MARKET & COPPER-PRICE EXPOSURE")
+    A("-" * 78)
+    if not live_detail:
+        A("(yfinance unavailable -> no live COMEX mark; sale-price mark shown above)")
+    else:
+        for t, (recent, live, fac) in live_detail.items():
+            A(f"    {t:7} recent {RECENT_DAYS}d avg {recent:>9.3f} -> live {live:>9.3f}"
+              f"  = x{fac:.3f}")
+        cm = float(cur["comex_mkt"].sum())
+        sm = float(cur["mkt"].sum())
+        A("")
+        A(f"{'inventory mark (sale-price)':<34}{sm:>16,.0f}")
+        A(f"{'inventory mark (live COMEX)':<34}{cm:>16,.0f}")
+        A(f"{'move since last sale ($)':<34}{cm-sm:>16,.0f}"
+          f"{(100*(cm-sm)/sm if sm else 0):>10.1f}%")
+        if exposure:
+            A("")
+            A(f"COPPER-PRICE EXPOSURE ({'/'.join(exposure['copper_metals'])} "
+              f"@ HG=F {exposure['comex_live_usd_lb']:.3f} $/lb)")
+            A(f"  {'copper inventory weight (lb)':<34}{exposure['copper_weight_lb']:>16,.0f}")
+            A(f"  {'copper market value ($)':<34}{exposure['copper_mkt']:>16,.0f}")
+            A(f"  {'wt-avg realization (scrap/COMEX)':<34}{exposure['wt_avg_realization']:>16.3f}")
+            A(f"  {'COMEX-equivalent copper (lb)':<34}{exposure['equiv_lbs']:>16,.0f}")
+            A(f"  {'P&L per +1% COMEX move ($)':<34}{exposure['exposure_per_1pct']:>16,.0f}")
+            A(f"  {'P&L per +1c/lb COMEX move ($)':<34}{exposure['exposure_per_1c_lb']:>16,.0f}")
+            A(f"  {'suggested COMEX hedge':<34}"
+              f"{'SHORT '+format(exposure['hedge_contracts'],'.1f')+' HG=F contracts':>16}")
+            A(f"  {'(1 HG=F contract = '+format(COMEX_COPPER_CONTRACT_LB,',')+' lb)':<34}")
+    A("")
     text = "\n".join(out)
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "inventory_valuation.txt"), "w") as f:
@@ -213,6 +330,11 @@ def main() -> None:
     cur.round(4).to_csv(os.path.join(OUT, "valuation_today_by_grade.csv"), index=False)
     e_metal.round(2).to_csv(os.path.join(OUT, "valuation_eoy2025_by_metal.csv"), index=False)
     c_metal.round(2).to_csv(os.path.join(OUT, "valuation_today_by_metal.csv"), index=False)
+    if exposure:
+        pd.DataFrame([{**{k: v for k, v in exposure.items() if k != "copper_metals"},
+                       "copper_metals": "/".join(exposure["copper_metals"]),
+                       "as_of": today_label}]).round(4).to_csv(
+            os.path.join(OUT, "copper_hedge_summary.csv"), index=False)
     print(text)
 
 

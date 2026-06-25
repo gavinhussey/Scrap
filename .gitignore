@@ -13,6 +13,11 @@ __pycache__/
 venv/
 env/
 
+# Generated artifacts & caches (regenerable — never commit)
+output/
+cache/
+copper_features_output/
+
 # Local/editor files
 .claude/
 *.code-workspace
@@ -22,3 +27,6 @@ vault/.obsidian/
 *.swp
 *.swo
 ~$*
+
+# Generated risk report (regenerable)
+risk_report.html

@@ -173,6 +173,50 @@ def build_html(
     basis_df = run_basis_stress(mtm)
     ws = results.worst_case
 
+    # --- copper-price exposure & suggested COMEX hedge (from the marked book) -
+    # Uses the model's own per-metal spot ($/tonne COMEX), avg_basis (= scrap
+    # realization) and sensitivity_per_dollar (dMTM per $1/tonne). A COMEX HG=F
+    # contract = 25,000 lb = 11.34 t, so #contracts = total $/t-sensitivity /
+    # 11.34. Hedges futures price risk only; the realization spread is residual.
+    _cu = summary[summary["metal"].isin(["copper", "brass"])]
+    copper_hedge_html = ""
+    if not _cu.empty and (summary["metal"] == "copper").any():
+        _spot_t = float(summary.loc[summary["metal"] == "copper", "spot_price"].iloc[0])
+        _comex_lb = _spot_t / 2204.62
+        _mkt = float(_cu["mtm_value"].sum())
+        _tonnes = float(_cu["total_tonnes"].sum())
+        _sens_t = float(_cu["sensitivity_per_dollar"].sum())
+        _realz = _mkt / (_tonnes * _spot_t) if _tonnes and _spot_t else float("nan")
+        _contract_t = 25_000 / 2204.62
+        _equiv_lbs = _sens_t * 2204.62
+        _contracts = _sens_t / _contract_t
+        _pnl_1pct = _sens_t * _spot_t * 0.01
+        _pnl_1c = _sens_t * 22.0462                   # 1c/lb = $22.0462/tonne
+        exposure_rows = "".join([
+            f"<tr><td>COMEX copper (HG=F)</td><td>{_comex_lb:.3f} $/lb &middot; {usd(_spot_t)}/t</td></tr>",
+            f"<tr><td>Copper-family MTM value</td><td>{usd(_mkt)}</td></tr>",
+            f"<tr><td>Weight-avg realization (scrap / COMEX)</td><td>{_realz:.3f}</td></tr>",
+            f"<tr><td>COMEX-equivalent copper</td><td>{_equiv_lbs:,.0f} lb</td></tr>",
+            f"<tr><td>P&amp;L per +1% COMEX move</td><td class=\"{cls(_pnl_1pct)}\">{usd(_pnl_1pct, signed=True)}</td></tr>",
+            f"<tr><td>P&amp;L per +1&cent;/lb COMEX move</td><td class=\"{cls(_pnl_1c)}\">{usd(_pnl_1c, signed=True)}</td></tr>",
+            f"<tr><td><strong>Suggested hedge</strong></td><td><strong>SHORT {_contracts:.1f} HG=F contracts</strong> (1 = 25,000 lb)</td></tr>",
+        ])
+        cu_metal_rows = "".join(
+            f"<tr><td>{esc(r['metal'].title())}</td><td>{r['total_tonnes']:,.1f}</td>"
+            f"<td>{usd(r['mtm_value'])}</td><td>{r['avg_basis']:.3f}</td>"
+            f"<td>{r['sensitivity_per_dollar']:,.2f}</td>"
+            f"<td>{r['sensitivity_per_dollar'] / _contract_t:.2f}</td></tr>"
+            for _, r in _cu.iterrows())
+        copper_hedge_html = f"""
+    <section id="copper-hedge">
+      <div class="section-head"><div><h2>Copper-Price Exposure &amp; Hedge</h2><div class="desc">COMEX-linked exposure of copper-family inventory (COPPER + BRASS) and the COMEX HG=F short that neutralizes copper <em>price</em> risk. It does not hedge the realization/basis spread &mdash; that residual scrap-specific risk is shown under Realization &amp; Basis Risk.</div></div></div>
+      <div class="grid">
+        <div class="card"><div class="card-title">Exposure &amp; Hedge</div>{table(exposure_rows, "<tr><th>Metric</th><th>Value</th></tr>")}</div>
+        <div class="card"><div class="card-title">By Copper-Family Metal</div>{table(cu_metal_rows, "<tr><th>Metal</th><th>Qty (t)</th><th>MTM Value</th><th>Realization</th><th>$/t Sens.</th><th>HG=F Equiv.</th></tr>")}</div>
+      </div>
+    </section>
+"""
+
     report_dt = datetime.today()
     report_date_long = report_dt.strftime("%B %-d, %Y")
     report_date_iso = report_dt.strftime("%Y-%m-%d")
@@ -505,7 +549,7 @@ def build_html(
     </div>
   </header>
   <nav><div class="container">
-    <a href="#overview">Portfolio</a><a href="#model-quality">Model Quality</a><a href="#run-comparison">Run Comparison</a><a href="#validation">Inventory Validation</a><a href="#valuation">Valuation Quality</a><a href="#realization">Realization</a><a href="#var">VaR</a><a href="#mc">Monte Carlo</a><a href="#stress">Stress</a><a href="#prices">Prices</a><a href="#commodities">Commodities</a><a href="#method">Methodology</a>
+    <a href="#overview">Portfolio</a><a href="#model-quality">Model Quality</a><a href="#run-comparison">Run Comparison</a><a href="#validation">Inventory Validation</a><a href="#valuation">Valuation Quality</a><a href="#realization">Realization</a><a href="#var">VaR</a><a href="#mc">Monte Carlo</a><a href="#stress">Stress</a><a href="#copper-hedge">Copper Hedge</a><a href="#prices">Prices</a><a href="#commodities">Commodities</a><a href="#method">Methodology</a>
   </div></nav>
   <div class="notice"><div class="container">Generated {report_date_iso} from current GreenSpark inventory. Price inputs may be live, cached, proxied, or synthetic; see Price Data Sources.</div></div>
   <main><div class="container">
@@ -619,7 +663,7 @@ def build_html(
         <div class="card"><div class="card-title">Scenario Breakdown</div>{table(scen_rows, scen_head)}</div>
       </div>
     </section>
-
+{copper_hedge_html}
     <section id="prices">
       <div class="section-head"><div><h2>Price History &amp; Returns</h2><div class="desc">Five-year lookback, USD per metric tonne.</div></div></div>
       <div class="grid">

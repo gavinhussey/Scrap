@@ -173,19 +173,6 @@ def ewma_volatility(returns: pd.Series, lam: float = 0.94) -> float:
     return float(np.sqrt(var))
 
 
-def rolling_volatility(returns: pd.Series, window: int = 20) -> pd.Series:
-    return returns.rolling(window).std() * np.sqrt(252)
-
-
-def effective_metals(metals: list[str]) -> list[str]:
-    seen: dict[str, str] = {}
-    for m in metals:
-        cfg = METALS.get(m, {})
-        driver = cfg.get("price_proxy", m)
-        seen[driver] = m
-    return list(seen.keys())
-
-
 def merge_exposures_by_driver(
     exposures: dict[str, float],
     returns_map: dict[str, pd.Series],
