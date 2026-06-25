@@ -1,0 +1,52 @@
+# FAST smoke config — exercises every code path on synthetic data quickly.
+# Not for real evaluation; use config.yaml for real runs.
+data:
+  input_csv: "data/raw/copper.csv"
+  date_column: null
+  price_column: null
+  prefer_settle: true
+
+target:
+  horizon_days: 1
+  direction_threshold: 0.0
+
+features:
+  lookback_sequence_days: 20
+  rolling_windows: [3, 5, 10, 20, 60]
+  include_day_of_week: true
+  include_volume_features: true
+
+backtest:
+  initial_train_size: 300
+  step_size: 1
+  retrain_lstm_every: 20
+  max_backtest_days: 40
+  validation_fraction: 0.15
+
+models:
+  run_naive: true
+  run_logistic: true
+  run_random_forest: true
+  run_svc: true
+  run_lstm: true
+
+lstm:
+  hidden_units: 16
+  dropout: 0.20
+  dense_units: 8
+  batch_size: 32
+  max_epochs: 15
+  patience: 5
+  learning_rate: 0.001
+
+signals:
+  long_threshold: 0.55
+  short_threshold: 0.45
+  allow_short_signal: true
+
+evaluation:
+  transaction_cost_bps: 0.0
+  annualization_days: 252
+
+limits:
+  svc_max_train_rows: 4000
