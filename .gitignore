@@ -16,6 +16,7 @@ env/
 # Generated artifacts & caches (regenerable — never commit)
 output/
 cache/
+copper_features_output/
 
 # Local/editor files
 .claude/
