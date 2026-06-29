@@ -1,37 +1,45 @@
-"""Fetch metals settlement prices via Bloomberg Terminal.
-
-Pulls four instruments, all with Ring official settlement available by ~7:15 AM CT
-(1:15 PM London), safely before the 8:30 AM CT prediction deadline.
-
-  LMCADS03 Comdty  — LME Copper 3m official settlement      -> data/external/lme_copper.csv
-  LMAHDS03 Comdty  — LME Aluminum 3m official settlement    -> data/external/lme_aluminum.csv
-  LMZSDS03 Comdty  — LME Zinc 3m official settlement        -> data/external/lme_zinc.csv
-  CU1 Comdty       — SHFE Copper front month                 -> data/external/shfe_copper.csv
-                     (SHFE day session closes ~3 PM Beijing = ~1 AM CT)
+"""Fetch LME Copper 3-month official settlement prices via Bloomberg Terminal.
 
 Requires Bloomberg Terminal running and logged in (port 8194).
-Install:  pip install xbbg   OR   pip install pdblp
+Ticker: LMCADS03 Comdty — LME Copper 3-month official settlement, USD/tonne.
 
-Run:  python bloombergCopper.py
+Output: data/external/lme_copper.csv with columns [date, lme_close]
+This file is automatically picked up by copper_close_morning_model.py.
+
+Install one of:
+    pip install pdblp
+    pip install xbbg
 """
 import sys
 import pandas as pd
 from pathlib import Path
 
+OUT = Path("data/external/lme_copper.csv")
+OUT.parent.mkdir(parents=True, exist_ok=True)
+
 START = "20140601"
 END   = pd.Timestamp.today().strftime("%Y%m%d")
-
-TICKERS = [
-    ("LMCADS03 Comdty", "lme_close",    "data/external/lme_copper.csv"),
-    ("LMAHDS03 Comdty", "lme_al_close", "data/external/lme_aluminum.csv"),
-    ("LMZSDS03 Comdty", "lme_zn_close", "data/external/lme_zinc.csv"),
-    ("CU1 Comdty",      "shfe_cu_close","data/external/shfe_copper.csv"),
-]
+TICKER = "LMCADS03 Comdty"
 
 
-def fetch_xbbg(ticker: str) -> pd.DataFrame:
+def fetch_pdblp() -> pd.DataFrame:
+    import pdblp
+    con = pdblp.BCon(debug=False, port=8194, timeout=5000)
+    con.start()
+    try:
+        df = con.bdh(tickers=[TICKER], flds=["PX_LAST"],
+                     start_date=START, end_date=END)
+        df = df.droplevel(0, axis=1).reset_index()
+        df.columns = ["date", "lme_close"]
+        return df
+    finally:
+        con.stop()
+
+
+def fetch_xbbg() -> pd.DataFrame:
     from xbbg import blp
-    result = blp.bdh(tickers=ticker, flds="PX_LAST", start_date="2014-06-01")
+    result = blp.bdh(tickers=TICKER, flds="PX_LAST", start_date="2014-06-01")
+    # xbbg may return a narwhals DataFrame in newer versions — convert to pandas
     if hasattr(result, "to_native"):
         df = result.to_native()
     elif hasattr(result, "to_pandas"):
@@ -39,67 +47,45 @@ def fetch_xbbg(ticker: str) -> pd.DataFrame:
     else:
         df = pd.DataFrame(result)
     if df is None or len(df) == 0:
-        raise RuntimeError(f"{ticker}: Bloomberg returned empty data — is Terminal running?")
-    # Long format: [ticker, date, field, value]
+        raise RuntimeError("Bloomberg returned empty data — is Terminal running and logged in?")
+    # Handle long format: [ticker, date, field, value]
     if "value" in df.columns and "date" in df.columns:
-        return df[df["field"] == "PX_LAST"][["date", "value"]].copy()
-    # Wide / MultiIndex format
+         
+        df = df[df["field"] == "PX_LAST"][["date", "value"]].copy()
+        df.columns = ["date", "lme_close"]
+        return df
+    # Handle wide format with MultiIndex columns
     if isinstance(df.columns, pd.MultiIndex):
         df = df.droplevel(0, axis=1).reset_index()
     else:
         df = df.reset_index()
-    df = df.iloc[:, :2].copy()
-    df.columns = ["date", "value"]
+    df.columns = ["date", "lme_close"]
     return df
 
 
-def fetch_pdblp(ticker: str) -> pd.DataFrame:
-    import pdblp
-    con = pdblp.BCon(debug=False, port=8194, timeout=5000)
-    con.start()
-    try:
-        df = con.bdh(tickers=[ticker], flds=["PX_LAST"],
-                     start_date=START, end_date=END)
-        df = df.droplevel(0, axis=1).reset_index()
-        df.columns = ["date", "value"]
-        return df
-    finally:
-        con.stop()
-
-
-def fetch(ticker: str) -> pd.DataFrame:
-    for name, fn in [("xbbg", fetch_xbbg), ("pdblp", fetch_pdblp)]:
-        try:
-            return fn(ticker)
-        except ImportError:
-            pass
-        except Exception as e:
-            print(f"  {name} failed for {ticker}: {e}")
-    raise RuntimeError(f"All methods failed for {ticker}. Is Bloomberg Terminal running?")
-
-
 def main():
-    any_failed = False
-    for ticker, col_name, out_path in TICKERS:
-        out = Path(out_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        print(f"Fetching {ticker} -> {out_path} ...")
+    df = None
+    for name, fn in [("pdblp", fetch_pdblp), ("xbbg", fetch_xbbg)]:
         try:
-            raw = fetch(ticker)
-            raw["date"] = pd.to_datetime(raw["date"])
-            raw = raw.dropna().sort_values("date").drop_duplicates("date")
-            raw.columns = ["date", col_name]
-            raw.to_csv(out, index=False)
-            print(f"  Saved {len(raw)} rows "
-                  f"({raw['date'].min().date()} - {raw['date'].max().date()})")
+            print(f"Trying {name}...")
+            df = fn()
+            print(f"  {name} succeeded")
+            break
+        except ImportError:
+            print(f"  {name} not installed — skipping")
         except Exception as e:
-            print(f"  FAILED: {e}")
-            any_failed = True
+            print(f"  {name} failed: {e}")
 
-    if any_failed:
-        print("\nSome tickers failed. Re-run after checking Bloomberg connection.")
+    if df is None:
+        print("\nBoth methods failed. Make sure Bloomberg Terminal is running and logged in.")
+        print("Install a Bloomberg Python library:  pip install pdblp  OR  pip install xbbg")
         sys.exit(1)
-    print("\nAll done. Re-run copper_close_morning_model.py to use new features.")
+
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.dropna(subset=["lme_close"]).sort_values("date").drop_duplicates("date")
+    df.to_csv(OUT, index=False)
+    print(f"Saved {len(df)} rows ({df['date'].min().date()} - {df['date'].max().date()}) to {OUT}")
+    print("Re-run copper_close_morning_model.py to incorporate LME features.")
 
 
 if __name__ == "__main__":

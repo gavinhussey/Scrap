@@ -14,7 +14,7 @@ every day. `target_up = 1 if close[t+1] > close[t] else 0`.
 - **Cross-asset divergence block** (the edge): producer/China/base-metal return minus
   aluminum's own return at 1/5/20d, divergence z-scores and ratio-momentum.
 - Non-stationary price LEVELS (ma_*, volume_ma_*) and exact duplicates dropped a priori.
-- **L1 selection** keeps ~76 features per fold; the final model uses
+- **L1 selection** keeps ~77 features per fold; the final model uses
   77. Top by |coef|: PICK_div_1d, wti_volatility_20d, brent_volatility_20d, KALU_ratio_mom20, KWEB_div_z20, ASHR_div_z20, DBB_div_5d, KALU_div_z20.
 
 ## Model
@@ -23,30 +23,30 @@ every day. `target_up = 1 if close[t+1] > close[t] else 0`.
 - Expanding-window walk-forward, 1999 out-of-sample days.
 
 ## Performance (walk-forward, every day)
-- **Accuracy: 0.5543** (95% CI [0.5151, 0.5908])
-- AUC: 0.5972 · Balanced accuracy: 0.5470
-- Up precision/recall: 0.495 / 0.485
-- Down precision/recall: 0.600 / 0.609
+- **Accuracy: 0.5523** (95% CI [0.5133, 0.5888])
+- AUC: 0.5958 · Balanced accuracy: 0.5442
+- Up precision/recall: 0.492 / 0.475
+- Down precision/recall: 0.597 / 0.613
 - Up base rate: 0.4412 (always-guess-majority = 0.5588)
-- Confusion (tn,fp,fn,tp): [680, 437, 454, 428]
+- Confusion (tn,fp,fn,tp): [685, 432, 463, 419]
 
 ## Deployable confidence gate (the dead-band that works)
 Trust the call only when the model is sure. Accuracy rises with conviction:
 
 | min \|p-0.5\| | coverage | accuracy | 95% CI |
 |---|---|---|---|
-| 0.0 | 100.0% | 0.5543 | [0.515, 0.591] |
-| 0.03 | 76.8% | 0.5768 | [0.531, 0.622] |
-| 0.05 | 65.1% | 0.5891 | [0.536, 0.639] |
-| 0.08 | 51.2% | 0.6074 | [0.544, 0.667] |
+| 0.0 | 100.0% | 0.5523 | [0.513, 0.589] |
+| 0.03 | 77.4% | 0.5740 | [0.527, 0.619] |
+| 0.05 | 65.1% | 0.5872 | [0.533, 0.636] |
+| 0.08 | 50.7% | 0.6095 | [0.546, 0.671] |
 
-Best confident slice: **0.6074 accuracy on 51.2% of days**
+Best confident slice: **0.6095 accuracy on 50.7% of days**
 (min |p-0.5| > 0.08). Volatility / move-size gates did NOT deploy
 (trailing vol predicts move size only weakly), so the gate is on model confidence.
 
 ## How to read it
 - Beats a coin flip with confidence (AUC CI clears 0.50); ~tied with always-up on raw accuracy.
-- Every-day ceiling ≈ 55.4%; the confidence gate buys higher accuracy on a
+- Every-day ceiling ≈ 55.2%; the confidence gate buys higher accuracy on a
   selective subset, not a higher every-day number.
 
 ## Statistical Notes
