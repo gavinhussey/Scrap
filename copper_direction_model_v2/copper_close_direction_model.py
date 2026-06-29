@@ -44,7 +44,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, roc_auc_score,
 )
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 
 # ----------------------------------------------------------------------------
 # Paths & config
@@ -294,6 +294,13 @@ def copper_features(df: pd.DataFrame, external_cols: list[str]) -> pd.DataFrame:
             f[f"{col}_return_20d"] = s.pct_change(20)
             f[f"{col}_momentum_20d"] = s / s.shift(20) - 1
             f[f"{col}_volatility_20d"] = s.pct_change(1).rolling(20).std()
+    # Calendar features — stationary, no leakage
+    dow = df["date"].dt.dayofweek.values.astype(float)   # 0=Mon, 4=Fri
+    f["dow_sin"] = np.sin(2 * np.pi * dow / 5)
+    f["dow_cos"] = np.cos(2 * np.pi * dow / 5)
+    month = df["date"].dt.month.values.astype(float)
+    f["month_sin"] = np.sin(2 * np.pi * month / 12)
+    f["month_cos"] = np.cos(2 * np.pi * month / 12)
     f = f.replace([np.inf, -np.inf], np.nan)
     return f[[c for c in f.columns if c not in LEAK_COLS]]
 
@@ -414,41 +421,61 @@ def _calibrate(base, Xva, yva, method="isotonic"):
 
 def walk_forward(X_all: pd.DataFrame, y: np.ndarray):
     """Expanding-window walk-forward L1 logistic; returns OOS calibrated P(up) per day."""
+    from collections import Counter
     features, report = filter_features(X_all, np.arange(INIT_TRAIN))
     features = _prune_drop(features)
     X = X_all[features]
     n = len(y)
     probs = np.full(n, np.nan)
     nz = []
+    fold_selections = []
     for r in range(INIT_TRAIN, n, STRIDE):
         ce = r - VAL_WINDOW
         if ce <= 50:
             continue
-        core, val, fc = np.arange(ce), np.arange(ce, r), np.arange(r, min(r + STRIDE, n))
-        if len(np.unique(y[core])) < 2 or len(np.unique(y[val])) < 2:
+        core = np.arange(ce)
+        fc = np.arange(r, min(r + STRIDE, n))
+        # Split val: first 2/3 for C-selection, last 1/3 for calibration
+        split_idx = ce + (2 * VAL_WINDOW) // 3
+        val_c   = np.arange(ce, split_idx)
+        val_cal = np.arange(split_idx, r)
+        if len(val_cal) < 30 or len(np.unique(y[val_cal])) < 2:
+            log(f"  fold r={r}: val_cal too small/uniform, falling back to full val for both")
+            val_c = val_cal = np.arange(ce, r)
+        if len(np.unique(y[core])) < 2 or len(np.unique(y[val_c])) < 2:
             continue
         imp = SimpleImputer(strategy="median").fit(X.iloc[core])
         Xi = pd.DataFrame(imp.transform(X), columns=features, index=X.index)
-        sc = StandardScaler().fit(Xi.iloc[core])
+        sc = RobustScaler().fit(Xi.iloc[core])
         Xs = sc.transform(Xi)
-        base, _C = _fit_best_C(Xs, y, core, val)        # per-fold C on validation
+        base, _C = _fit_best_C(Xs, y, core, val_c)      # C selected on val_c only
         nz.append(int((np.abs(base.coef_) > 1e-8).sum()))
-        cal = _calibrate(base, Xs[val], y[val])
+        fold_selections.append([features[i] for i, c in enumerate(base.coef_.ravel()) if abs(c) > 1e-8])
+        cal = _calibrate(base, Xs[val_cal], y[val_cal])  # calibrated on val_cal only
         probs[fc] = cal.predict_proba(Xs[fc])[:, 1]
     report["candidate_features"] = len(features)
     report["avg_features_used_per_fold"] = float(np.mean(nz)) if nz else float("nan")
+    all_counts = Counter(f for fold in fold_selections for f in fold)
+    n_folds = max(len(fold_selections), 1)
+    report["feature_selection_freq"] = {f: all_counts[f] / n_folds for f in features}
     return probs, features, report
 
 
 # ----------------------------------------------------------------------------
 # Metrics + deployable confidence gate
 # ----------------------------------------------------------------------------
-def _boot_acc(correct, iters=3000):
+def _boot_acc(correct, iters=3000, block_size=20):
+    """Circular block bootstrap — accounts for autocorrelation in rolling-window features."""
     rng = np.random.default_rng(RANDOM_STATE)
     n = len(correct)
-    if n < 20:
+    if n < 40:
         return (np.nan, np.nan)
-    s = [correct[rng.integers(0, n, n)].mean() for _ in range(iters)]
+    n_blocks = int(np.ceil(n / block_size))
+    s = []
+    for _ in range(iters):
+        starts = rng.integers(0, n, n_blocks)
+        sample = np.concatenate([correct[st : st + block_size] for st in starts])[:n]
+        s.append(float(sample.mean()))
     return tuple(np.percentile(s, [2.5, 97.5]))
 
 
@@ -494,13 +521,16 @@ def fit_final_model(X: pd.DataFrame, y: np.ndarray, features: list[str]):
     features = _prune_drop(features)
     n = len(y)
     core = np.arange(max(0, n - INIT_TRAIN), n - VAL_WINDOW)
-    val = np.arange(n - VAL_WINDOW, n)
+    val_start = n - VAL_WINDOW
+    val_split = val_start + (2 * VAL_WINDOW) // 3
+    val_c   = np.arange(val_start, val_split)
+    val_cal = np.arange(val_split, n)
     imp = SimpleImputer(strategy="median").fit(X[features].iloc[core])
     Xi = pd.DataFrame(imp.transform(X[features]), columns=features, index=X.index)
-    sc = StandardScaler().fit(Xi.iloc[core])
+    sc = RobustScaler().fit(Xi.iloc[core])
     Xs = sc.transform(Xi)
-    base, C = _fit_best_C(Xs, y, core, val)
-    cal = _calibrate(base, Xs[val], y[val])
+    base, C = _fit_best_C(Xs, y, core, val_c)
+    cal = _calibrate(base, Xs[val_cal], y[val_cal])
     coef = base.coef_.ravel()
     selected = [(f, float(c)) for f, c in zip(features, coef) if abs(c) > 1e-8]
     selected.sort(key=lambda t: abs(t[1]), reverse=True)
@@ -575,6 +605,16 @@ Best confident slice: **{best_gate['accuracy']:.4f} accuracy on {best_gate['cove
 - Every-day ceiling ≈ {me['accuracy']:.1%}; the confidence gate buys higher accuracy on a
   selective subset, not a higher every-day number.
 
+## Statistical Notes
+- Confidence intervals use **circular block bootstrap** (block_size=20, 3000 iters) to
+  account for autocorrelation in rolling-window features. CIs are wider than a naive
+  i.i.d. bootstrap would produce — this is the honest estimate.
+- Val window is split: first 2/3 for C-selection, last 1/3 for calibration. This prevents
+  the isotonic calibration from seeing the same labels used to pick C.
+- Feature stability (fraction of folds where each feature had non-zero L1 coefficient) is
+  saved in `feature_stability.csv`. Features selected in <20% of folds should be treated
+  as unreliable signal.
+
 ## Next: more data features (this model is built to extend)
 Add genuinely *leading* inputs — overnight Asian/AU-session copper-miner closes
 (BHP.AX, RIO.AX, HK copper miners), LME–COMEX spread / term structure, options skew.
@@ -582,7 +622,7 @@ Add genuinely *leading* inputs — overnight Asian/AU-session copper-miner close
 ---
 *Research model — not financial advice. Validate before any real use.*
 """
-    path.write_text(md)
+    path.write_text(md, encoding="utf-8")
 
 
 # ----------------------------------------------------------------------------
@@ -638,6 +678,13 @@ def main() -> int:
     pd.DataFrame([{"feature": f, "coefficient": c} for f, c in final["coefficients"].items()]).to_csv(
         OUT_DIR / "selected_features.csv", index=False)
     pd.DataFrame({"candidate_feature": features}).to_csv(OUT_DIR / "candidate_features.csv", index=False)
+    pd.DataFrame([
+        {"feature": f, "selection_freq": v}
+        for f, v in freport["feature_selection_freq"].items()
+    ], columns=["feature", "selection_freq"]).sort_values(
+        "selection_freq", ascending=False
+    ).to_csv(OUT_DIR / "feature_stability.csv", index=False)
+    log(f"Feature stability written -> feature_stability.csv")
     log(f"Final model: C={final['chosen_C']}, {len(final['selected_features'])} features selected "
         f"of {len(features)} candidates.")
     with open(OUT_DIR / "metrics_summary.json", "w") as fh:

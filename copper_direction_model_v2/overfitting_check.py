@@ -24,7 +24,7 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, roc_auc_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 
 import copper_close_direction_model as cc
 
@@ -63,21 +63,27 @@ def walk_forward(X_all, y, init_train=1000, val_window=252, stride=63,
         ce = r - val_window
         if ce <= 50:
             continue
-        core, val, fc = np.arange(ce), np.arange(ce, r), np.arange(r, min(r + stride, n))
-        if len(np.unique(y[core])) < 2 or len(np.unique(y[val])) < 2:
+        core = np.arange(ce)
+        fc = np.arange(r, min(r + stride, n))
+        split_idx = ce + (2 * val_window) // 3
+        val_c   = np.arange(ce, split_idx)
+        val_cal = np.arange(split_idx, r)
+        if len(val_cal) < 30 or len(np.unique(y[val_cal])) < 2:
+            val_c = val_cal = np.arange(ce, r)
+        if len(np.unique(y[core])) < 2 or len(np.unique(y[val_c])) < 2:
             continue
         imp = SimpleImputer(strategy="median").fit(X.iloc[core])
         Xi = pd.DataFrame(imp.transform(X), columns=feats, index=X.index)
-        sc = StandardScaler().fit(Xi.iloc[core])
+        sc = RobustScaler().fit(Xi.iloc[core])
         Xs = sc.transform(Xi)
         best, best_auc = None, -1
         for C in cgrid:
             m = _l1(C, seed).fit(Xs[core], y[core])
-            a = roc_auc_score(y[val], m.predict_proba(Xs[val])[:, 1])
+            a = roc_auc_score(y[val_c], m.predict_proba(Xs[val_c])[:, 1])
             if a > best_auc:
                 best, best_auc = m, a
         if calibrate:
-            cal = cc._calibrate(best, Xs[val], y[val])
+            cal = cc._calibrate(best, Xs[val_cal], y[val_cal])
             probs[fc] = cal.predict_proba(Xs[fc])[:, 1]
         else:
             probs[fc] = best.predict_proba(Xs[fc])[:, 1]
@@ -143,24 +149,25 @@ def main():
     log(f"   accuracy spread: {cdf['accuracy'].min():.4f} - {cdf['accuracy'].max():.4f} "
         f"(std {cdf['accuracy'].std():.4f})")
 
-    # ---- 3. permutation null (fixed C for speed) ----
+    # ---- 3. permutation null (full pipeline — same as main model) ----
     log("-" * 76)
     K = 20
-    log(f"3) PERMUTATION NULL TEST ({K} label shuffles, fixed C=0.05):")
-    real = walk_forward(X, y, cgrid=(0.05,))
-    rmask = ~np.isnan(real)
-    real_acc = accuracy_score(y[rmask], (real[rmask] >= 0.5).astype(int))
+    log(f"3) PERMUTATION NULL TEST ({K} label shuffles, full pipeline):")
+    real = cc.walk_forward(X, y)
+    rmask = ~np.isnan(real[0])
+    real_acc = accuracy_score(y[rmask], (real[0][rmask] >= 0.5).astype(int))
     rng = np.random.default_rng(42)
     null_accs = []
     for k in range(K):
         ys = y.copy()
         rng.shuffle(ys)
-        pn = walk_forward(X, ys, cgrid=(0.05,), calibrate=False)
+        pn, _, _ = cc.walk_forward(X, ys)
         m2 = ~np.isnan(pn)
         null_accs.append(accuracy_score(ys[m2], (pn[m2] >= 0.5).astype(int)))
+        log(f"   null {k+1:02d}/{K}: acc={null_accs[-1]:.4f}")
     null_accs = np.array(null_accs)
     p_value = float((null_accs >= real_acc).mean())
-    log(f"   real acc (C=0.05)      : {real_acc:.4f}")
+    log(f"   real acc (full pipeline): {real_acc:.4f}")
     log(f"   null acc mean+/-std    : {null_accs.mean():.4f} +/- {null_accs.std():.4f}")
     log(f"   null acc max           : {null_accs.max():.4f}")
     log(f"   permutation p-value    : {p_value:.3f}  (fraction of nulls >= real)")

@@ -67,6 +67,10 @@ aluminum_return_1d
 aluminum_return_5d
 aluminum_momentum_20d
 aluminum_volatility_20d
+dow_sin
+dow_cos
+month_sin
+month_cos
 FCX_div_1d
 FCX_div_5d
 FCX_div_20d

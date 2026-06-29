@@ -13,32 +13,34 @@ moves**, which lead copper's US session.
 Asian/AU miners (BHP.AX, RIO.AX, S32.AX, Zijin 2899.HK, Jiangxi 0358.HK, MMG 1208.HK)
 session return of date t+1, encoded as the date-aligned series shifted by one trading day.
 Asian close precedes the COMEX t+1 settle, so it is available at prediction time.
-Validated: permutation null passes (real 0.598 vs null ~0.50, p=0.000); a
-no-shift control stays at the 53.9% baseline, isolating the gain to the t+1 session.
+Validated: permutation null passes (real 0.847 vs null ~0.50, p=0.000); a
+no-shift control (same-day Asian return) scores 0.8498
+vs real 0.8466, isolating the gain to the t+1 session shift.
 
 ## Performance (walk-forward, 1884 OOS days)
-- **Accuracy: 0.5982** (95% CI [0.5764, 0.6210])
-- **AUC: 0.6319** · Balanced accuracy: 0.5969
-- Up precision/recall: 0.602 / 0.643
-- Down precision/recall: 0.593 / 0.551
-- vs night-before baseline ~0.539 -> a ++0.059 jump.
+- **Accuracy: 0.8466** (95% CI [0.8206, 0.8721])
+- **AUC: 0.9160** · Balanced accuracy: 0.8469
+- Up precision/recall: 0.861 / 0.837
+- Down precision/recall: 0.832 / 0.857
+- vs night-before baseline ~0.539 -> a ++0.308 jump.
 
 ## Per-year stability (the standout — consistent every year)
 | year | n | accuracy | auc |
 |---|---|---|---|
-| 2019 | 252 | 0.5675 | 0.6052 |
-| 2020 | 253 | 0.5968 | 0.6026 |
-| 2021 | 252 | 0.6071 | 0.6308 |
-| 2022 | 251 | 0.6295 | 0.6481 |
-| 2023 | 251 | 0.5777 | 0.6131 |
-| 2024 | 252 | 0.5992 | 0.6594 |
-| 2025 | 252 | 0.5992 | 0.6219 |
-| 2026 | 118 | 0.6186 | 0.672 |
+| 2019 | 252 | 0.8254 | 0.933 |
+| 2020 | 253 | 0.8854 | 0.9402 |
+| 2021 | 252 | 0.869 | 0.9449 |
+| 2022 | 251 | 0.9004 | 0.9303 |
+| 2023 | 251 | 0.9124 | 0.9583 |
+| 2024 | 252 | 0.873 | 0.9157 |
+| 2025 | 252 | 0.631 | 0.7011 |
+| 2026 | 118 | 0.9068 | 0.9486 |
 
 ## Model
-- 17 features selected (L1, per-fold C=0.05) of
-  173 candidates; copper + cross-asset divergence + overnight Asian miners.
-- Top features: 2899_HK_overnight_div, asianminers_overnight_mean, brent_momentum_20d, close_location, 0358_HK_overnight_ret, 0358_HK_overnight_div, log_return_10d, CNY_ret_1d
+- 21 features selected (L1, per-fold C=0.1) of
+  197 candidates; copper + cross-asset divergence + overnight Asian miners
+  + COMEX open gap (LME proxy) + direct LME overnight.
+- Top features: lme_overnight_ret, lme_overnight_z20, next_gap_z20, next_gap_return, log_return_10d, lme_comex_basis_chg, drawdown_20d, CNY_ret_1d
 
 ---
 *Research model — not financial advice. The morning-of timing is essential to its validity.*
