@@ -48,9 +48,9 @@ STEEL_TICKERS = [
     ("SCO1 Comdty",  "sgx_io_close",   "sgx_iron_ore.csv",     "SGX iron ore 62% Fe (USD/t)"),
     # ⚠️  RE-FETCH NEEDED: RBTA/RBA were wrong. Try RBT1 Comdty — verify DES <GO> first.
     ("RBT1 Comdty",  "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
-    # ⚠️  RE-FETCH NEEDED: HCA/HC1 were wrong. Try HCT1 Comdty (same pattern as RBT1).
+    # ⚠️  RE-FETCH NEEDED: HCA/HC1 were wrong. Try ROC1 Comdty (same pattern as RBT1).
     # NOTE: Do NOT use CMX HRC (US Midwest) — we need SHFE HRC (China). Verify DES <GO>.
-    ("HCT1 Comdty",  "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
+    ("ROC1 Comdty",  "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
     # ❌ BROKEN: JMA/JM01 failed. Try CKC1 Comdty (DCE coking coal 1st generic).
     ("CKC1 Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
@@ -60,7 +60,7 @@ STEEL_TICKERS = [
 STEEL_TICKERS_BROKEN_ONLY = [
     # Verify each with DES <GO> before running
     ("RBT1 Comdty",  "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
-    ("HCT1 Comdty",  "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
+    ("ROC1 Comdty",  "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
     ("CKC1 Comdty",  "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
 
