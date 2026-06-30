@@ -63,7 +63,8 @@ def _align_series(df_dates: pd.DataFrame, csv_path: Path,
     return merged[price_col].reset_index(drop=True)
 
 
-def china_ferrous_features(df: pd.DataFrame, shift_d: int = 0) -> pd.DataFrame:
+def china_ferrous_features(df: pd.DataFrame, shift_d: int = 0,
+                           exclude_sgx: bool = False) -> pd.DataFrame:
     """China ferrous complex features from Bloomberg CSVs (all optional).
 
     TIMING GUIDE — which shift_d to use:
@@ -88,7 +89,10 @@ def china_ferrous_features(df: pd.DataFrame, shift_d: int = 0) -> pd.DataFrame:
         (SHFE_HRC_CSV, "shfe_hrc_close", "shfe_hrc"),
         (DCE_IO_CSV,   "dce_io_close",   "dce_io"),
         (DCE_CC_CSV,   "dce_cc_close",   "dce_cc"),
-        (SGX_IO_CSV,   "sgx_io_close",   "sgx_io"),
+        # SGX iron ore Bloomberg = same contract as TIO=F yfinance; only valid at shift_d=0
+        # (day-t SGX predicting day t+1 TIO). At shift_d=-1 it's a self-leak: same instrument
+        # same settlement date. exclude_sgx=True is set by iron_ore_morning_model.py.
+        *([( SGX_IO_CSV,   "sgx_io_close",   "sgx_io")] if not exclude_sgx else []),
     ]
 
     overnight_rets = []

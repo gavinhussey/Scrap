@@ -64,7 +64,9 @@ def build_panel(shift: bool = True):
     Xc = base.steel_features(df, ext_cols).reset_index(drop=True)
     Xd = base.divergence_features(base.fetch_macro(), df["close"], df["date"]).reset_index(drop=True)
     shift_d = -1 if shift else 0
-    Xf = night.china_ferrous_features(df, shift_d=shift_d).reset_index(drop=True)
+    # exclude_sgx=True because SGX Bloomberg and TIO=F yfinance are the same contract;
+    # shift(-1) on SGX would leak the same-day settle into the feature set.
+    Xf = night.china_ferrous_features(df, shift_d=shift_d, exclude_sgx=shift).reset_index(drop=True)
     X = pd.concat([Xc, Xd, Xf], axis=1)
     y = df["target_up"].to_numpy(int)
     n_china = Xf.shape[1]

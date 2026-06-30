@@ -42,11 +42,24 @@ STEEL_OUT = BASE / "steel_direction_model_v1" / "data" / "external"
 
 STEEL_TICKERS = [
     # ticker               column           filename                  description
-    ("RBTA Comdty",  "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
-    ("HCA Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
+    # ✓ GOOD (2,931 rows 2014-2026) — skip unless re-fetching everything
     ("IOE1 Comdty",  "dce_io_close",   "dce_iron_ore.csv",     "DCE iron ore 1st generic (CNY/t)"),
-    ("JMA Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
+    # ✓ GOOD (3,115 rows 2014-2026) — skip unless re-fetching everything
     ("SCO1 Comdty",  "sgx_io_close",   "sgx_iron_ore.csv",     "SGX iron ore 62% Fe (USD/t)"),
+    # ⚠️  RE-FETCH NEEDED: RBTA returned only 416 rows (84% sparse). Try RBA Comdty.
+    ("RBA Comdty",   "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
+    # ⚠️  RE-FETCH NEEDED: HCA returned only 107 rows (96% sparse). Try HC1 Comdty.
+    ("HC1 Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
+    # ❌ BROKEN: JMA returned 3 rows all same value. Try JM01 Comdty.
+    ("JM01 Comdty",  "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
+]
+
+# To re-fetch ONLY the broken tickers (faster), set STEEL_TICKERS_REFIX to True and run.
+# The good DCE/SGX iron ore data will be skipped automatically by --skip-good flag below.
+STEEL_TICKERS_BROKEN_ONLY = [
+    ("RBA Comdty",   "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
+    ("HC1 Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
+    ("JM01 Comdty",  "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -58,7 +71,7 @@ ALUMINUM_OUT = BASE / "aluminum_direction_model_v1" / "data" / "external"
 
 ALUMINUM_TICKERS = [
     # ticker               column            filename                       description
-    ("ANO1 Comdty",   "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
+    ("AN01 Comdty",   "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
     ("MEPRAICW Index","lme_al_stocks",  "lme_al_inventory.csv",        "LME aluminum on-warrant stocks (t)"),
     ("MEPRALCW Index","lme_al_cw",     "lme_al_cancelled_warrants.csv","LME aluminum cancelled warrants (t)"),
     ("TTFGDAHD Index","ttf_close",     "ttf_gas.csv",                  "TTF gas day-ahead (EUR/MWh)"),
@@ -186,9 +199,12 @@ def run_group(label: str, tickers: list, out_dir: Path, dry_run: bool) -> tuple[
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch Bloomberg data for metal direction models")
-    parser.add_argument("--skip-steel",    action="store_true", help="Skip steel/iron ore tickers")
-    parser.add_argument("--skip-aluminum", action="store_true", help="Skip aluminum tickers")
-    parser.add_argument("--dry-run",       action="store_true", help="List tickers without fetching")
+    parser.add_argument("--skip-steel",       action="store_true", help="Skip all steel/iron ore tickers")
+    parser.add_argument("--skip-aluminum",    action="store_true", help="Skip all aluminum tickers")
+    parser.add_argument("--steel-broken-only", action="store_true",
+                        help="Re-fetch only the 3 broken steel tickers (RBA/HC1/JM01). "
+                             "Skips the good DCE/SGX iron ore data.")
+    parser.add_argument("--dry-run",          action="store_true", help="List tickers without fetching")
     args = parser.parse_args()
 
     print(TICKER_NOTES)
@@ -199,7 +215,9 @@ def main():
     total_ok, total_fail = 0, 0
 
     if not args.skip_steel:
-        ok, fail = run_group("STEEL — China ferrous complex", STEEL_TICKERS, STEEL_OUT, args.dry_run)
+        steel_list = STEEL_TICKERS_BROKEN_ONLY if args.steel_broken_only else STEEL_TICKERS
+        label = "STEEL — broken tickers only (RBA/HC1/JM01)" if args.steel_broken_only else "STEEL — China ferrous complex"
+        ok, fail = run_group(label, steel_list, STEEL_OUT, args.dry_run)
         total_ok += ok; total_fail += fail
 
     if not args.skip_aluminum:

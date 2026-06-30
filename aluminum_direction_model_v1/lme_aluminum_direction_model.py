@@ -37,12 +37,85 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 import aluminum_close_direction_model as base
 
 BASE_DIR = Path(__file__).resolve().parent
-LME_CSV = BASE_DIR / "data" / "external" / "lme_aluminum.csv"
-EXT_CSV = BASE_DIR / "data" / "external" / "external_drivers.csv"
-OUT_DIR = BASE_DIR / "outputs" / "lme_aluminum_close_direction"
+LME_CSV      = BASE_DIR / "data" / "external" / "lme_aluminum.csv"
+EXT_CSV      = BASE_DIR / "data" / "external" / "external_drivers.csv"
+OUT_DIR      = BASE_DIR / "outputs" / "lme_aluminum_close_direction"
+SHFE_AL_CSV  = BASE_DIR / "data" / "external" / "shfe_aluminum.csv"
+LME_AL_INV   = BASE_DIR / "data" / "external" / "lme_al_inventory.csv"
+LME_AL_CW    = BASE_DIR / "data" / "external" / "lme_al_cancelled_warrants.csv"
+TTF_GAS_CSV  = BASE_DIR / "data" / "external" / "ttf_gas.csv"
 
 
 def log(m): print(f"[lme_aluminum] {m}", flush=True)
+
+
+def _align_series(df_dates: pd.DataFrame, csv_path: Path, price_col: str) -> pd.Series:
+    raw = pd.read_csv(csv_path, parse_dates=["date"])
+    raw.columns = [c.lower().strip() for c in raw.columns]
+    raw = (raw[["date", price_col]].dropna()
+           .sort_values("date").drop_duplicates("date", keep="last"))
+    merged = df_dates[["date"]].reset_index(drop=True).merge(
+        raw[["date", price_col]], on="date", how="left")
+    merged[price_col] = merged[price_col].ffill()
+    return merged[price_col].reset_index(drop=True)
+
+
+def bloomberg_nightbefore_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Bloomberg aluminum fundamentals as of day t (all valid for the night-before decision).
+
+    SHFE aluminum closes ~2am ET (day-t session already closed by 4pm ET decision).
+    LME inventory and cancelled warrants are daily published levels.
+    TTF gas is the previous European day settlement.
+    All are shift=0: use day-t value to predict day-(t+1) direction. No overnight shift needed.
+    Run bloomberg_aluminum.py first.
+    """
+    close = df["close"].reset_index(drop=True)
+    vol20 = close.pct_change(1).rolling(20).std()
+    cols = {}
+    n_loaded = 0
+
+    if SHFE_AL_CSV.exists():
+        al = _align_series(df, SHFE_AL_CSV, "shfe_al_close")
+        ret = al.pct_change(1)
+        cols["shfe_al_ret"]     = ret.to_numpy()
+        cols["shfe_al_ret_z20"] = base._safe_div(ret, vol20).to_numpy()
+        cols["shfe_al_div"]     = (ret - close.pct_change(1)).to_numpy()
+        n_loaded += 1
+        log(f"Bloomberg night-before: SHFE aluminum ({al.notna().sum()} rows)")
+
+    if LME_AL_INV.exists():
+        inv = _align_series(df, LME_AL_INV, "lme_al_stocks")
+        inv_ret = inv.pct_change(1)
+        cols["lme_al_inv_chg"]  = inv_ret.to_numpy()
+        cols["lme_al_inv_z20"]  = base._safe_div(inv_ret, inv_ret.rolling(20).std()).to_numpy()
+        cols["lme_al_inv_lvl"]  = (inv / inv.rolling(60).mean() - 1).to_numpy()
+        n_loaded += 1
+        log(f"Bloomberg night-before: LME inventory ({inv.notna().sum()} rows)")
+
+    if LME_AL_CW.exists():
+        cw = _align_series(df, LME_AL_CW, "lme_al_cw")
+        cw_chg = cw.diff(1)
+        cols["lme_al_cw_pct"] = cw.to_numpy()
+        cols["lme_al_cw_chg"] = cw_chg.to_numpy()
+        cols["lme_al_cw_z20"] = base._safe_div(cw_chg, cw_chg.rolling(20).std()).to_numpy()
+        n_loaded += 1
+        log(f"Bloomberg night-before: LME cancelled warrants ({cw.notna().sum()} rows)")
+
+    if TTF_GAS_CSV.exists():
+        ttf = _align_series(df, TTF_GAS_CSV, "ttf_close")
+        ttf_ret = ttf.pct_change(1)
+        cols["ttf_ret"]      = ttf_ret.to_numpy()
+        cols["ttf_vol_20d"]  = ttf_ret.rolling(20).std().to_numpy()
+        cols["ttf_ret_5d"]   = ttf_ret.rolling(5).mean().to_numpy()
+        n_loaded += 1
+        log(f"Bloomberg night-before: TTF gas ({ttf.notna().sum()} rows)")
+
+    if n_loaded == 0:
+        log("Bloomberg CSVs not found — run bloomberg_aluminum.py to add fundamentals")
+    else:
+        log(f"Bloomberg night-before: {len(cols)} features from {n_loaded} sources")
+
+    return pd.DataFrame(cols, index=range(len(df))).replace([np.inf, -np.inf], np.nan)
 
 
 def load_lme() -> tuple[pd.DataFrame, list[str]]:
@@ -79,7 +152,8 @@ def build_panel():
     df = base.create_target(df)
     Xc = base.metal_features(df, ext_cols).reset_index(drop=True)
     Xd = base.divergence_features(base.fetch_macro(), df["close"], df["date"]).reset_index(drop=True)
-    X = pd.concat([Xc, Xd], axis=1)
+    Xb = bloomberg_nightbefore_features(df).reset_index(drop=True)
+    X = pd.concat([Xc, Xd, Xb], axis=1)
     y = df["target_up"].to_numpy(int)
     return df, X, y, ext_cols
 
