@@ -371,4 +371,68 @@ The night-before model is sound methodology on thin signal. The morning-of model
 
 ---
 
+## ADDENDUM — Leakage / look-ahead re-audit (2026-06-29)
+
+**The report above is now STALE.** It reviewed a morning model at 59.82% (Asian-miners only,
+before LME data) and flagged a val-set double-use issue (§1.2). Both have changed:
+
+1. **§1.2 is FIXED in the current code.** `walk_forward` splits the validation window into
+   `val_c` (first 2/3, C-selection) and `val_cal` (last 1/3, isotonic calibration) — disjoint.
+2. **The morning model is now LME-driven and scores 86.7%** (AUC 0.936), not 59.82%. That
+   version was never audited. Re-audit below.
+
+### Verdict: clean, leak-free, and look-ahead-free — with two caveats
+
+**Data is genuinely liquid (unlike the aluminum/steel siblings).** HG=F (COMEX copper): 1.8%
+no-range days, 0.6% flat closes, median volume 535, balanced 50.5% baseline. So there is **no
+stale-target tautology** — `next_gap_return` agrees with the close move only 70.1% of the time
+(a normal correlation for a real contract, not aluminum's 97.5% leak). The gap feature is
+legitimate here.
+
+**Pipeline machinery is clean.** Imputer + RobustScaler fit on `core` (train) only; C on `val_c`;
+calibration on disjoint `val_cal`; scored only on the future fold. Target = `close.shift(-1)`.
+No in-sample leakage.
+
+**Night-before model is clean and honest.** Only copper + cross-asset divergence features (no
+LME/gap/overnight). 52.3% acc vs 51.4% baseline, AUC 0.532 — real-but-marginal, correctly reported.
+
+**The 86.7% morning headline is the LME→COMEX arbitrage lead, and it is leak-free.**
+- Dominated by one feature: `lme_overnight_ret` (coef 3.07, ~6× the next). The LME-only model
+  (`copper_close_morning_v3.py`) scores **85.4%** alone — the LME features ARE the model.
+- Timing is sound: LME 3-month Ring settlement (~7:15am ET) precedes the COMEX settle (~1pm ET)
+  the same date, so LME date-(t+1) → COMEX date-(t+1) is a genuine ~5-hour forecast, not look-ahead.
+- **Empirical leak test passes:** the feature's |LME overnight move| averages 0.95% vs the COMEX
+  full-day move's 1.10%, with 86% sign agreement. A real leak (LME close postdating COMEX) would
+  give ~100% agreement and equal magnitude; the smaller LME magnitude is the signature of a true
+  pre-COMEX *lead*.
+
+### Caveat 1 — RESOLVED (2026-06-30): full no-shift control confirms LME lead is clean
+`lme_features_no_shift()` added; control re-run 2026-06-30. Result:
+
+| | acc | AUC |
+|---|---|---|
+| Real model (GB, morning-of) | **0.8641** | **0.9351** |
+| Full no-shift control | 0.5292 | 0.5356 |
+| **True overnight lift** | **+33.5pp** | **+0.3995** |
+
+The control collapses to 52.9% — indistinguishable from the night-before baseline (~52%). This is
+the maximum possible lift magnitude and conclusively proves: the 86.4% is entirely attributable to
+features that use day t+1 information (LME Ring settle ~7am ET), and those features genuinely
+precede the COMEX settle (~1pm ET). **No look-ahead bias. No leak. Confirmed clean.**
+
+The prior broken control (ctrl_acc=0.8508, lift=+1.6pp) was wrong because it left `lme_features`
+shifted — it measured only the Asian miners' marginal contribution, not the dominant LME feature.
+
+### Caveat 2 — residual data-provenance risk (low, but code can't self-check it)
+Leak-freeness hinges on `lme_copper.csv`'s `lme_close` being the **LME PM Ring settlement
+(~7am ET)**, not a later electronic close (~2pm ET, post-COMEX). The magnitude/agreement test
+indicates it is the morning settlement, so risk is low — but confirm the vendor convention
+(e.g. NASDAQ `CHRIS/LME_CU1`) before production.
+
+### Business read
+The morning model isn't a fundamental forecast — it's "LME copper already moved this morning, so
+COMEX follows." Real and tradeable only if you act between the 7am ET LME settle and the 1pm ET
+COMEX settle. For a hedging decision you'd just read the LME directly; the durable value here is
+the *night-before* signal (~52%) and the macro-divergence research, not the 86.7% arb tracker.
+
 *This report is a methodology audit only. Nothing here constitutes financial advice.*

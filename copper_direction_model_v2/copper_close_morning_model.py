@@ -330,6 +330,50 @@ def lme_features(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(cols, index=range(len(df))).replace([np.inf, -np.inf], np.nan)
 
 
+def lme_features_no_shift(df: pd.DataFrame) -> pd.DataFrame:
+    """Control variant: same-day LME/SHFE returns (no shift(-1)).
+
+    Used to validate that lme_features() truly exploits the ~5h LME→COMEX timing gap
+    and isn't picking up a look-ahead artifact. If the LME lead is real, this control
+    should score close to the night-before ~52% baseline. If it matches the morning
+    model's 86%+, the feature is leaking.
+
+    Mirrors lme_features() exactly, except all .shift(-1) calls are removed.
+    lme_comex_basis and lme_comex_basis_chg are day-t basis levels — unchanged.
+    """
+    if not LME_CSV.exists():
+        return pd.DataFrame(index=range(len(df)))
+    lp = _align_series(df, LME_CSV, "lme_close", unit_div=2204.62)
+    close = df["close"].reset_index(drop=True)
+    lme_ret   = lp.pct_change(1)
+    lme_vol20 = lme_ret.rolling(20).std()
+    basis     = lp - close
+    cols = {}
+    cols["lme_overnight_ret"]   = lme_ret.to_numpy()                          # no shift
+    cols["lme_overnight_z20"]   = base._safe_div(lme_ret, lme_vol20).to_numpy()  # no shift
+    cols["lme_comex_basis"]     = basis.to_numpy()
+    cols["lme_comex_basis_chg"] = basis.diff(1).to_numpy()
+    overnight_rets = [lme_ret]
+    if LME_AL_CSV.exists():
+        al = _align_series(df, LME_AL_CSV, "lme_al_close", unit_div=2204.62)
+        al_ret = al.pct_change(1)
+        cols["lme_al_overnight_ret"] = al_ret.to_numpy()                      # no shift
+        overnight_rets.append(al_ret)
+    if LME_ZN_CSV.exists():
+        zn = _align_series(df, LME_ZN_CSV, "lme_zn_close", unit_div=2204.62)
+        zn_ret = zn.pct_change(1)
+        cols["lme_zn_overnight_ret"] = zn_ret.to_numpy()                      # no shift
+        overnight_rets.append(zn_ret)
+    if SHFE_CU_CSV.exists():
+        sh = _align_series(df, SHFE_CU_CSV, "shfe_cu_close")
+        sh_ret = sh.pct_change(1)
+        cols["shfe_cu_overnight_ret"] = sh_ret.to_numpy()                     # no shift
+        overnight_rets.append(sh_ret)
+    if len(overnight_rets) > 1:
+        cols["metals_composite"] = pd.concat(overnight_rets, axis=1).mean(axis=1).to_numpy()
+    return pd.DataFrame(cols, index=range(len(df))).replace([np.inf, -np.inf], np.nan)
+
+
 def build_panel():
     primary, reason = base.find_dataset(BASE_DIR)
     external = base.find_external_file(BASE_DIR, primary)
@@ -455,31 +499,36 @@ def main() -> int:
             log("LR wins on AUC — using LR for final outputs")
             probs, metrics, gate, mask, py = probs_lr, metrics_lr, gate_lr, mask_lr, py_lr
 
-    # No-shift control: validates that the edge comes from tomorrow's Asian session,
-    # not same-day. Should revert to approximately the night-before ~53.9% baseline.
-    log("--- No-shift control (same-day Asian return; should ~= night-before baseline) ---")
+    # Full no-shift control: de-shifts BOTH Asian miners AND all LME/SHFE features.
+    # The prior control only de-shifted Asian miners, leaving lme_overnight_ret (coef ~3x)
+    # still using shift(-1) — so it didn't validate the dominant feature.
+    # comex_open_features (next_gap_return) is inherently forward-looking via open.shift(-1);
+    # there is no clean same-day equivalent, so it is excluded from the control.
+    # Expected: if the LME lead is real, control should collapse to ~night-before ~52%.
+    log("--- Full no-shift control (same-day Asian + same-day LME; should ~= 52% baseline) ---")
     overnight_prices = fetch_overnight()
     Xo_ctrl = overnight_features_no_shift(
         overnight_prices, df["close"], df["date"]
     ).reset_index(drop=True)
     Xc_ctrl = base.copper_features(df, meta["merged_external_cols"]).reset_index(drop=True)
     Xd_ctrl = base.divergence_features(base.fetch_macro(), df["close"], df["date"]).reset_index(drop=True)
-    Xl_ctrl = lme_features(df).reset_index(drop=True)
-    Xg_ctrl = comex_open_features(df).reset_index(drop=True)
-    X_ctrl = pd.concat([Xc_ctrl, Xd_ctrl, Xo_ctrl, Xl_ctrl, Xg_ctrl], axis=1)
+    Xl_ctrl = lme_features_no_shift(df).reset_index(drop=True)   # <-- was lme_features (bug)
+    # gap features excluded: next_gap_return = open_{t+1}/close_t is forward-looking by design
+    X_ctrl = pd.concat([Xc_ctrl, Xd_ctrl, Xo_ctrl, Xl_ctrl], axis=1)
     probs_ctrl, _, _ = base.walk_forward(X_ctrl, y)
     mask_ctrl = ~np.isnan(probs_ctrl)
     ctrl_acc = accuracy_score(y[mask_ctrl], (probs_ctrl[mask_ctrl] >= 0.5).astype(int))
     ctrl_auc = roc_auc_score(y[mask_ctrl], probs_ctrl[mask_ctrl])
-    log(f"No-shift control: acc={ctrl_acc:.4f}  auc={ctrl_auc:.4f}  "
+    log(f"Full no-shift control: acc={ctrl_acc:.4f}  auc={ctrl_auc:.4f}  "
         f"(real model: acc={metrics['accuracy']:.4f}  auc={metrics['auc']:.4f})")
-    log(f"Overnight lift: acc +{metrics['accuracy'] - ctrl_acc:+.4f}  "
-        f"auc +{metrics['auc'] - ctrl_auc:+.4f}")
+    log(f"True overnight lift: acc {metrics['accuracy'] - ctrl_acc:+.4f}  "
+        f"auc {metrics['auc'] - ctrl_auc:+.4f}")
     pd.DataFrame([{
         "ctrl_acc": ctrl_acc, "ctrl_auc": ctrl_auc,
         "real_acc": metrics["accuracy"], "real_auc": metrics["auc"],
         "acc_lift": metrics["accuracy"] - ctrl_acc,
         "auc_lift": metrics["auc"] - ctrl_auc,
+        "control_note": "full no-shift: same-day Asian miners + same-day LME/SHFE; gap features excluded",
     }]).to_csv(OUT_DIR / "overnight_shift_validation.csv", index=False)
 
     oos = pd.DataFrame({

@@ -9,13 +9,13 @@ Will COMEX copper close **higher tomorrow than it closed today**? Pure up/down, 
 - Macro drivers merged: `external_drivers.csv` + 19 cross-asset tickers
 - Rows: 2884 · Date range: 2015-01-02 → 2026-06-23
 
-## Features (163 candidates -> 14 selected)
+## Features (183 candidates -> 16 selected)
 - Copper price block (returns, momentum, trend ratios, volatility, drawdown, candle, volume)
 - **Cross-asset divergence block** (the edge): miner/China/base-metal return minus copper's
   own return at 1/5/20d, divergence z-scores and ratio-momentum.
 - Non-stationary price LEVELS (ma_*, volume_ma_*) and exact duplicates dropped a priori.
-- **L1 selection** keeps ~59 features per fold; the final model uses
-  14. Top by |coef|: XME_div_z20, brent_momentum_20d, CNY_ret_1d, CPER_ratio_mom20, volume_vs_ma20, VIX_vol_20d, log_return_10d, curve_2s10s_momentum_20d.
+- **L1 selection** keeps ~61 features per fold; the final model uses
+  16. Top by |coef|: XME_div_z20, brent_momentum_20d, CNY_ret_1d, CPER_ratio_mom20, volume_vs_ma20, VIX_vol_20d, cu_gld_ratio_z63, cu_gld_ratio_mom20.
 
 ## Model
 - **L1-penalized Logistic Regression** + isotonic calibration (logistic beat RF/GB/HistGB —
@@ -23,30 +23,30 @@ Will COMEX copper close **higher tomorrow than it closed today**? Pure up/down, 
 - Expanding-window walk-forward, 1884 out-of-sample days.
 
 ## Performance (walk-forward, every day)
-- **Accuracy: 0.5228** (95% CI [0.4989, 0.5472])
-- AUC: 0.5316 · Balanced accuracy: 0.5193
-- Up precision/recall: 0.529 / 0.647
-- Down precision/recall: 0.512 / 0.392
+- **Accuracy: 0.5165** (95% CI [0.4936, 0.5387])
+- AUC: 0.5268 · Balanced accuracy: 0.5152
+- Up precision/recall: 0.528 / 0.561
+- Down precision/recall: 0.503 / 0.469
 - Up base rate: 0.5138 (always-guess-majority = 0.5138)
-- Confusion (tn,fp,fn,tp): [359, 557, 342, 626]
+- Confusion (tn,fp,fn,tp): [430, 486, 425, 543]
 
 ## Deployable confidence gate (the dead-band that works)
 Trust the call only when the model is sure. Accuracy rises with conviction:
 
 | min \|p-0.5\| | coverage | accuracy | 95% CI |
 |---|---|---|---|
-| 0.0 | 100.0% | 0.5228 | [0.499, 0.547] |
-| 0.03 | 82.8% | 0.5212 | [0.494, 0.549] |
-| 0.05 | 68.5% | 0.5264 | [0.498, 0.556] |
-| 0.08 | 56.8% | 0.5425 | [0.513, 0.575] |
+| 0.0 | 100.0% | 0.5165 | [0.494, 0.539] |
+| 0.03 | 84.7% | 0.5179 | [0.492, 0.544] |
+| 0.05 | 72.0% | 0.5206 | [0.494, 0.549] |
+| 0.08 | 54.8% | 0.5247 | [0.496, 0.555] |
 
-Best confident slice: **0.5425 accuracy on 56.8% of days**
+Best confident slice: **0.5247 accuracy on 54.8% of days**
 (min |p-0.5| > 0.08). Volatility / move-size gates did NOT deploy
 (trailing vol predicts move size only weakly), so the gate is on model confidence.
 
 ## How to read it
 - Beats a coin flip with confidence (AUC CI clears 0.50); ~tied with always-up on raw accuracy.
-- Every-day ceiling ≈ 52.3%; the confidence gate buys higher accuracy on a
+- Every-day ceiling ≈ 51.6%; the confidence gate buys higher accuracy on a
   selective subset, not a higher every-day number.
 
 ## Statistical Notes
