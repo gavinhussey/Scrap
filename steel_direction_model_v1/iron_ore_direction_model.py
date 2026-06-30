@@ -151,11 +151,9 @@ def build_panel():
     df = base.create_target(df)
     Xc = base.steel_features(df, ext_cols).reset_index(drop=True)
     Xd = base.divergence_features(base.fetch_macro(), df["close"], df["date"]).reset_index(drop=True)
-    # Only include confirmed-good China ferrous series. RBA Comdty (shfe_rb) and HC1 Comdty
-    # (shfe_hrc) are unverified tickers: RBA has -0.02 correlation with DCE iron ore and a
-    # 5x equity-like uptrend, indicating it is the wrong instrument. Exclude until confirmed.
-    Xf = china_ferrous_features(df, shift_d=0,
-                                include_prefixes=["dce_io", "dce_cc", "sgx_io"]).reset_index(drop=True)
+    # All five China ferrous series now have verified tickers with full 2014-2026 history.
+    # shift_d=0: SHFE/DCE close ~2am ET, night-before decision at 4pm ET — no leak.
+    Xf = china_ferrous_features(df, shift_d=0).reset_index(drop=True)
     X = pd.concat([Xc, Xd, Xf], axis=1)
     y = df["target_up"].to_numpy(int)
     return df, X, y

@@ -7,46 +7,46 @@ day t+1 — before the TIO=F final settlement at ~5-6am ET. See iron_ore_directi
 for the night-before baseline (~51.9%).
 
 ## No-shift control (the honesty check)
-Real model acc 0.5644 / AUC 0.5980.
-No-shift control acc 0.5138 / AUC 0.5353.
-**Overnight shift lift: +0.0506 acc / +0.0626 AUC.**
+Real model acc 0.5501 / AUC 0.5827.
+No-shift control acc 0.5202 / AUC 0.5408.
+**Overnight shift lift: +0.0300 acc / +0.0419 AUC.**
 Only a **positive, meaningful lift** makes the morning timing worthwhile.
 If lift ≤ 0, the China ferrous "overnight" data is contemporaneous with TIO=F — do not deploy.
 
 ## Performance (walk-forward, 2034 OOS days)
-- **Accuracy: 0.5644** (95% CI [0.5334, 0.5931])
-- AUC: 0.5980 · Balanced accuracy: 0.5628
+- **Accuracy: 0.5501** (95% CI [0.5206, 0.5777])
+- AUC: 0.5827 · Balanced accuracy: 0.5467
 - Up base rate: 0.5167 (always-guess-majority = 0.5167)
-- Up precision/recall: 0.574 / 0.610
-- Down precision/recall: 0.553 / 0.516
+- Up precision/recall: 0.555 / 0.651
+- Down precision/recall: 0.542 / 0.443
 
 ## Deployable confidence gate
 | min \|p-0.5\| | coverage | accuracy | 95% CI |
 |---|---|---|---|
-| 0.0 | 100.0% | 0.5644 | [0.533, 0.593] |
-| 0.03 | 85.8% | 0.5771 | [0.544, 0.608] |
-| 0.05 | 79.3% | 0.5865 | [0.551, 0.621] |
-| 0.08 | 72.6% | 0.5863 | [0.547, 0.624] |
+| 0.0 | 100.0% | 0.5501 | [0.521, 0.578] |
+| 0.03 | 84.8% | 0.5615 | [0.530, 0.590] |
+| 0.05 | 79.0% | 0.5710 | [0.537, 0.601] |
+| 0.08 | 65.4% | 0.5913 | [0.554, 0.626] |
 
-Best confident slice: **0.5865 on 79.3% of days**.
+Best confident slice: **0.5913 on 65.4% of days**.
 
 ## Per-year stability
 | year | n | accuracy | auc |
 |---|---|---|---|
-| 2018 | 153 | 0.6144 | 0.6186 |
-| 2019 | 252 | 0.5159 | 0.4815 |
-| 2020 | 253 | 0.6047 | 0.6401 |
-| 2021 | 252 | 0.5556 | 0.5831 |
-| 2022 | 251 | 0.6056 | 0.6424 |
-| 2023 | 250 | 0.588 | 0.629 |
-| 2024 | 252 | 0.5317 | 0.5786 |
-| 2025 | 251 | 0.5737 | 0.6287 |
-| 2026 | 120 | 0.45 | 0.506 |
+| 2018 | 153 | 0.5752 | 0.5727 |
+| 2019 | 252 | 0.5119 | 0.4784 |
+| 2020 | 253 | 0.5455 | 0.6036 |
+| 2021 | 252 | 0.5238 | 0.5782 |
+| 2022 | 251 | 0.5936 | 0.6657 |
+| 2023 | 250 | 0.552 | 0.6089 |
+| 2024 | 252 | 0.5913 | 0.5861 |
+| 2025 | 251 | 0.5936 | 0.5988 |
+| 2026 | 120 | 0.3917 | 0.3852 |
 
 ## Model
-- 22 features selected (L1, C=0.05) of 162
+- 18 features selected (L1, C=0.05) of 162
   candidates; iron ore price block + cross-asset divergence + China ferrous overnight leads.
-- Top features: shfe_hrc_ret, VALE_div_5d, dce_io_ret, CNY_vol_20d, momentum_5d, SID_div_20d, VIX_vol_20d, DBB_div_1d
+- Top features: shfe_rb_ret_z20, shfe_hrc_mom5, CNY_vol_20d, dce_io_ret, SID_div_20d, shfe_hrc_ret_z20, VALE_div_5d, shfe_rb_mom5
 
 ## China ferrous features (Bloomberg required)
 Populated by bloombergSteel.py. If overnight shift lift ≤ 0, the features are not leading
