@@ -58,10 +58,10 @@ ALUMINUM_OUT = BASE / "aluminum_direction_model_v1" / "data" / "external"
 
 ALUMINUM_TICKERS = [
     # ticker               column            filename                       description
-    ("ANO1 Comdty",    "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
+    ("ANO1 Comdty",   "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
     ("MEPRAICW Index","lme_al_stocks",  "lme_al_inventory.csv",        "LME aluminum on-warrant stocks (t)"),
-    ("MEPRALCW Index","lme_al_cw",    "lme_al_cancelled_warrants.csv","LME aluminum cancelled warrants (%)"),
-    ("TTFGDAHD Index","ttf_close",     "ttf_gas.csv",                  "TTF Hub natural gas day-ahead (EUR/MWh)"),
+    ("MEPRALCW Index","lme_al_cw",     "lme_al_cancelled_warrants.csv","LME aluminum cancelled warrants (t)"),
+    ("TTFGDAHD Index","ttf_close",     "ttf_gas.csv",                  "TTF gas day-ahead (EUR/MWh)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -76,10 +76,10 @@ Ticker verification guide (type each in Bloomberg, then DES <GO>):
   JMA Comdty    → DCE coking coal. Alternatives: JM01 Comdty, JMCA Comdty
   SCO1 Comdty   → SGX iron ore. Alternatives: TIO1 Comdty
 
-  ANO1 Comdty    → SHFE aluminum 1st generic. Alternatives: ALUA Comdty, ALU1 Comdty
-  MEPRAICW Index → LME aluminum on-warrant stocks (fetched via VALUE field, not PX_LAST)
-  MEPRALCW Index → LME aluminum cancelled warrants (fetched via VALUE field, not PX_LAST)
-  TTFGDAHD Index → TTF Hub day-ahead gas. Alternatives: TTFGASNLD Index, NGERNLH Index
+  ALA Comdty    → SHFE aluminum 1st generic. Alternatives: ALUA Comdty, ALU1 Comdty
+  LMAHSTKS Index → LME aluminum on-warrant stocks (fetched via VALUE field, not PX_LAST)
+  LMAHCWRTS Index → LME aluminum cancelled warrants (fetched via VALUE field, not PX_LAST)
+  TTFHNGDY Index → TTF Hub day-ahead gas. Alternatives: TTFGASNLD Index, NGERNLH Index
 """
 
 START = "20140601"

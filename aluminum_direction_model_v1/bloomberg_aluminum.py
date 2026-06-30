@@ -52,14 +52,14 @@ END = pd.Timestamp.today().strftime("%Y%m%d")
 #                    Note: TTF is EUR/MWh; the model uses % returns so units don't matter.
 #
 TICKERS = [
-    ("ALA Comdty",      "shfe_al_close",  "data/external/shfe_aluminum.csv",
+    ("AN01 Comdty",     "shfe_al_close",  "data/external/shfe_aluminum.csv",
      "SHFE aluminum 1st generic (CNY/tonne)"),
-    ("LMAHSTKS Index",  "lme_al_stocks",  "data/external/lme_al_inventory.csv",
+    ("MEPRAICW Index",  "lme_al_stocks",  "data/external/lme_al_inventory.csv",
      "LME aluminum on-warrant stocks (tonnes)"),
-    ("LMAHCWRTS Index", "lme_al_cw",      "data/external/lme_al_cancelled_warrants.csv",
-     "LME aluminum cancelled warrants (%)"),
-    ("TTFHNGDY Index",  "ttf_close",      "data/external/ttf_gas.csv",
-     "TTF Hub natural gas day-ahead (EUR/MWh)"),
+    ("MEPRALCW Index",  "lme_al_cw",      "data/external/lme_al_cancelled_warrants.csv",
+     "LME aluminum cancelled warrants (tonnes)"),
+    ("TTFGDAHD Index",  "ttf_close",      "data/external/ttf_gas.csv",
+     "TTF gas day-ahead (EUR/MWh)"),
 ]
 
 
