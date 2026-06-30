@@ -58,10 +58,10 @@ ALUMINUM_OUT = BASE / "aluminum_direction_model_v1" / "data" / "external"
 
 ALUMINUM_TICKERS = [
     # ticker               column            filename                       description
-    ("ALA Comdty",    "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
-    ("LMAHSTKS Index","lme_al_stocks",  "lme_al_inventory.csv",        "LME aluminum on-warrant stocks (t)"),
-    ("LMAHCWRTS Index","lme_al_cw",    "lme_al_cancelled_warrants.csv","LME aluminum cancelled warrants (%)"),
-    ("TTFHNGDY Index","ttf_close",     "ttf_gas.csv",                  "TTF Hub natural gas day-ahead (EUR/MWh)"),
+    ("AN01 Comdty",   "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
+    ("MEPRAICW Index","lme_al_stocks",  "lme_al_inventory.csv",        "LME aluminum on-warrant stocks (t)"),
+    ("MEPRALCW Index","lme_al_cw",     "lme_al_cancelled_warrants.csv","LME aluminum cancelled warrants (t)"),
+    ("TTFGDAHD Index","ttf_close",     "ttf_gas.csv",                  "TTF gas day-ahead (EUR/MWh)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
