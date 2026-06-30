@@ -50,8 +50,8 @@ STEEL_TICKERS = [
     ("RBA Comdty",   "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
     # ⚠️  RE-FETCH NEEDED: HCA returned only 107 rows (96% sparse). Try HC1 Comdty.
     ("HC1 Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
-    # ❌ BROKEN: JMA returned 3 rows all same value. Try JM01 Comdty.
-    ("JM01 Comdty",  "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
+    # ❌ BROKEN: JMA/JM01 failed. Try JM1 Comdty (DCE coking coal 1st generic).
+    ("JM1 Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
 
 # To re-fetch ONLY the broken tickers (faster), set STEEL_TICKERS_REFIX to True and run.
@@ -59,7 +59,10 @@ STEEL_TICKERS = [
 STEEL_TICKERS_BROKEN_ONLY = [
     ("RBA Comdty",   "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
     ("HC1 Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
-    ("JM01 Comdty",  "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
+    # JMA=3 rows broken, JM01=failed. JM1 is the standard DCE 1st generic format.
+    # If JM1 also fails: on Bloomberg type  JM <GO>  → Comdty → pick "DCE COKING COAL FUTURES"
+    # then hit DES <GO> to confirm the ticker and substitute it here.
+    ("JM1 Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -71,7 +74,7 @@ ALUMINUM_OUT = BASE / "aluminum_direction_model_v1" / "data" / "external"
 
 ALUMINUM_TICKERS = [
     # ticker               column            filename                       description
-    ("AN01 Comdty",   "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
+    ("ANO1 Comdty",   "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
     ("MEPRAICW Index","lme_al_stocks",  "lme_al_inventory.csv",        "LME aluminum on-warrant stocks (t)"),
     ("MEPRALCW Index","lme_al_cw",     "lme_al_cancelled_warrants.csv","LME aluminum cancelled warrants (t)"),
     ("TTFGDAHD Index","ttf_close",     "ttf_gas.csv",                  "TTF gas day-ahead (EUR/MWh)"),
