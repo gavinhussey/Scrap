@@ -50,8 +50,8 @@ STEEL_TICKERS = [
     ("RBA Comdty",   "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
     # ⚠️  RE-FETCH NEEDED: HCA returned only 107 rows (96% sparse). Try HC1 Comdty.
     ("HC1 Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
-    # ❌ BROKEN: JMA/JM01 failed. Try JMCA Comdty (DCE coking coal 1st generic).
-    ("JMCA Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
+    # ❌ BROKEN: JMA/JM01 failed. Try CKC1 Comdty (DCE coking coal 1st generic).
+    ("CKC1 Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
 
 # To re-fetch ONLY the broken tickers (faster), set STEEL_TICKERS_REFIX to True and run.
@@ -62,7 +62,7 @@ STEEL_TICKERS_BROKEN_ONLY = [
     # JMA=3 rows broken, JM01=failed. JM1 is the standard DCE 1st generic format.
     # If JM1 also fails: on Bloomberg type  JM <GO>  → Comdty → pick "DCE COKING COAL FUTURES"
     # then hit DES <GO> to confirm the ticker and substitute it here.
-    ("JMCA Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
+    ("CKC1 Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ Ticker verification guide (type each in Bloomberg, then DES <GO>):
   RBTA Comdty   → SHFE rebar. Alternatives: RBA Comdty, RBT1 Comdty
   HCA Comdty    → SHFE hot-rolled coil. Alternatives: HRC1 Comdty, SHFRHRCA Index
   IOE1 Comdty   → DCE iron ore. Alternatives: I01 Comdty, IOA Comdty
-  JMA Comdty    → DCE coking coal. Alternatives: JM01 Comdty, JMCA Comdty
+  JMA Comdty    → DCE coking coal. Alternatives: JM01 Comdty, CKC1 Comdty
   SCO1 Comdty   → SGX iron ore. Alternatives: TIO1 Comdty
 
   ALA Comdty    → SHFE aluminum 1st generic. Alternatives: ALUA Comdty, ALU1 Comdty
