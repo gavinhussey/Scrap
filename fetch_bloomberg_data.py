@@ -58,10 +58,10 @@ ALUMINUM_OUT = BASE / "aluminum_direction_model_v1" / "data" / "external"
 
 ALUMINUM_TICKERS = [
     # ticker               column            filename                       description
-    ("ALUA Comdty",   "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
+    ("ALA Comdty",    "shfe_al_close",  "shfe_aluminum.csv",           "SHFE aluminum 1st generic (CNY/t)"),
     ("LMAHSTKS Index","lme_al_stocks",  "lme_al_inventory.csv",        "LME aluminum on-warrant stocks (t)"),
     ("LMAHCWRTS Index","lme_al_cw",    "lme_al_cancelled_warrants.csv","LME aluminum cancelled warrants (%)"),
-    ("TTFMMA0 Comdty","ttf_close",     "ttf_gas.csv",                  "TTF natural gas front-month (EUR/MWh)"),
+    ("TTFHNGDY Index","ttf_close",     "ttf_gas.csv",                  "TTF Hub natural gas day-ahead (EUR/MWh)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -74,31 +74,32 @@ Ticker verification guide (type each in Bloomberg, then DES <GO>):
   HCA Comdty    → SHFE hot-rolled coil. Alternatives: HRC1 Comdty, SHFRHRCA Index
   IOE1 Comdty   → DCE iron ore. Alternatives: I01 Comdty, IOA Comdty
   JMA Comdty    → DCE coking coal. Alternatives: JM01 Comdty, JMCA Comdty
-  SCO1 Comdty   → SGX iron ore. Alternatives: TIO1 Comdty, TIO=F (yfinance only)
+  SCO1 Comdty   → SGX iron ore. Alternatives: TIO1 Comdty
 
-  ALUA Comdty   → SHFE aluminum. Alternatives: ALU1 Comdty, ALUA1 Comdty
-  LMAHSTKS Index → LME aluminum stocks. Search: LME ALUMINIUM WAREHOUSE STOCKS
-  LMAHCWRTS Index → LME aluminum cancelled warrants. Search: LME ALUMINIUM CANCELLED
-  TTFMMA0 Comdty → TTF gas. Alternatives: TTFGAS Index, GASNLH Comdty
+  ALA Comdty    → SHFE aluminum 1st generic. Alternatives: ALUA Comdty, ALU1 Comdty
+  LMAHSTKS Index → LME aluminum on-warrant stocks (fetched via VALUE field, not PX_LAST)
+  LMAHCWRTS Index → LME aluminum cancelled warrants (fetched via VALUE field, not PX_LAST)
+  TTFHNGDY Index → TTF Hub day-ahead gas. Alternatives: TTFGASNLD Index, NGERNLH Index
 """
 
 START = "20140601"
 END = pd.Timestamp.today().strftime("%Y%m%d")
 
 
-def fetch_xbbg(ticker: str) -> pd.DataFrame:
-    from xbbg import blp
-    result = blp.bdh(tickers=ticker, flds="PX_LAST", start_date="2014-06-01")
-    if hasattr(result, "to_native"):
-        df = result.to_native()
-    elif hasattr(result, "to_pandas"):
-        df = result.to_pandas()
+def _normalise(df) -> pd.DataFrame:
+    """Coerce whatever xbbg/pdblp returns to a clean two-column [date, value] DataFrame."""
+    if hasattr(df, "to_native"):
+        df = df.to_native()
+    elif hasattr(df, "to_pandas"):
+        df = df.to_pandas()
     else:
-        df = pd.DataFrame(result)
+        df = pd.DataFrame(df)
     if df is None or len(df) == 0:
         raise RuntimeError("Bloomberg returned empty data")
-    if "value" in df.columns and "date" in df.columns:
-        return df[df["field"] == "PX_LAST"][["date", "value"]].copy()
+    # Long format: columns include 'date', 'field', 'value'
+    if {"date", "field", "value"}.issubset(df.columns):
+        return df[["date", "value"]].copy()
+    # Wide format with MultiIndex (ticker, field) columns
     if isinstance(df.columns, pd.MultiIndex):
         df = df.droplevel(0, axis=1).reset_index()
     else:
@@ -108,16 +109,36 @@ def fetch_xbbg(ticker: str) -> pd.DataFrame:
     return df
 
 
+def fetch_xbbg(ticker: str) -> pd.DataFrame:
+    from xbbg import blp
+    # Try PX_LAST first (prices), fall back to VALUE (LME inventory / index series)
+    for field in ("PX_LAST", "VALUE"):
+        try:
+            result = blp.bdh(tickers=ticker, flds=field, start_date="2014-06-01")
+            df = _normalise(result)
+            if len(df.dropna()) > 0:
+                return df
+        except Exception:
+            pass
+    raise RuntimeError(f"xbbg: no data for {ticker} under PX_LAST or VALUE")
+
+
 def fetch_pdblp(ticker: str) -> pd.DataFrame:
     import pdblp
     con = pdblp.BCon(debug=False, port=8194, timeout=5000)
     con.start()
     try:
-        df = con.bdh(tickers=[ticker], flds=["PX_LAST"],
-                     start_date=START, end_date=END)
-        df = df.droplevel(0, axis=1).reset_index()
-        df.columns = ["date", "value"]
-        return df
+        for field in ("PX_LAST", "VALUE"):
+            try:
+                df = con.bdh(tickers=[ticker], flds=[field],
+                             start_date=START, end_date=END)
+                df = df.droplevel(0, axis=1).reset_index()
+                df.columns = ["date", "value"]
+                if len(df.dropna()) > 0:
+                    return df
+            except Exception:
+                pass
+        raise RuntimeError(f"pdblp: no data for {ticker} under PX_LAST or VALUE")
     finally:
         con.stop()
 

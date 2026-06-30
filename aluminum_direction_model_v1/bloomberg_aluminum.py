@@ -52,14 +52,14 @@ END = pd.Timestamp.today().strftime("%Y%m%d")
 #                    Note: TTF is EUR/MWh; the model uses % returns so units don't matter.
 #
 TICKERS = [
-    ("ALUA Comdty",     "shfe_al_close",  "data/external/shfe_aluminum.csv",
+    ("ALA Comdty",      "shfe_al_close",  "data/external/shfe_aluminum.csv",
      "SHFE aluminum 1st generic (CNY/tonne)"),
     ("LMAHSTKS Index",  "lme_al_stocks",  "data/external/lme_al_inventory.csv",
      "LME aluminum on-warrant stocks (tonnes)"),
     ("LMAHCWRTS Index", "lme_al_cw",      "data/external/lme_al_cancelled_warrants.csv",
      "LME aluminum cancelled warrants (%)"),
-    ("TTFMMA0 Comdty",  "ttf_close",      "data/external/ttf_gas.csv",
-     "European TTF natural gas front-month (EUR/MWh)"),
+    ("TTFHNGDY Index",  "ttf_close",      "data/external/ttf_gas.csv",
+     "TTF Hub natural gas day-ahead (EUR/MWh)"),
 ]
 
 
@@ -67,19 +67,17 @@ TICKERS = [
 # Bloomberg fetch (identical pattern to bloombergCopper.py / bloombergSteel.py)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def fetch_xbbg(ticker: str) -> pd.DataFrame:
-    from xbbg import blp
-    result = blp.bdh(tickers=ticker, flds="PX_LAST", start_date="2014-06-01")
-    if hasattr(result, "to_native"):
-        df = result.to_native()
-    elif hasattr(result, "to_pandas"):
-        df = result.to_pandas()
+def _normalise(df) -> pd.DataFrame:
+    if hasattr(df, "to_native"):
+        df = df.to_native()
+    elif hasattr(df, "to_pandas"):
+        df = df.to_pandas()
     else:
-        df = pd.DataFrame(result)
+        df = pd.DataFrame(df)
     if df is None or len(df) == 0:
-        raise RuntimeError(f"{ticker}: Bloomberg returned empty data — is Terminal running?")
-    if "value" in df.columns and "date" in df.columns:
-        return df[df["field"] == "PX_LAST"][["date", "value"]].copy()
+        raise RuntimeError("Bloomberg returned empty data")
+    if {"date", "field", "value"}.issubset(df.columns):
+        return df[["date", "value"]].copy()
     if isinstance(df.columns, pd.MultiIndex):
         df = df.droplevel(0, axis=1).reset_index()
     else:
@@ -89,16 +87,35 @@ def fetch_xbbg(ticker: str) -> pd.DataFrame:
     return df
 
 
+def fetch_xbbg(ticker: str) -> pd.DataFrame:
+    from xbbg import blp
+    for field in ("PX_LAST", "VALUE"):
+        try:
+            result = blp.bdh(tickers=ticker, flds=field, start_date="2014-06-01")
+            df = _normalise(result)
+            if len(df.dropna()) > 0:
+                return df
+        except Exception:
+            pass
+    raise RuntimeError(f"xbbg: no data for {ticker} under PX_LAST or VALUE")
+
+
 def fetch_pdblp(ticker: str) -> pd.DataFrame:
     import pdblp
     con = pdblp.BCon(debug=False, port=8194, timeout=5000)
     con.start()
     try:
-        df = con.bdh(tickers=[ticker], flds=["PX_LAST"],
-                     start_date=START, end_date=END)
-        df = df.droplevel(0, axis=1).reset_index()
-        df.columns = ["date", "value"]
-        return df
+        for field in ("PX_LAST", "VALUE"):
+            try:
+                df = con.bdh(tickers=[ticker], flds=[field],
+                             start_date=START, end_date=END)
+                df = df.droplevel(0, axis=1).reset_index()
+                df.columns = ["date", "value"]
+                if len(df.dropna()) > 0:
+                    return df
+            except Exception:
+                pass
+        raise RuntimeError(f"pdblp: no data for {ticker} under PX_LAST or VALUE")
     finally:
         con.stop()
 
