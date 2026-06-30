@@ -14,38 +14,38 @@ Night-before: decision at day-t US close; target is the day-(t+1) SGX settle. Al
 features precede it.
 
 ## Performance (walk-forward, 2034 OOS days)
-- **Accuracy: 0.5280** (95% CI [0.4971, 0.5595])
-- AUC: 0.5463 · Balanced accuracy: 0.5256
+- **Accuracy: 0.5172** (95% CI [0.4872, 0.5477])
+- AUC: 0.5451 · Balanced accuracy: 0.5153
 - Up base rate: 0.5167 (always-guess-majority = 0.5167)
-- Up precision/recall: 0.539 / 0.599
-- Down precision/recall: 0.513 / 0.452
+- Up precision/recall: 0.530 / 0.574
+- Down precision/recall: 0.501 / 0.457
 
 ## Deployable confidence gate
 | min \|p-0.5\| | coverage | accuracy | 95% CI |
 |---|---|---|---|
-| 0.0 | 100.0% | 0.5280 | [0.497, 0.559] |
-| 0.03 | 87.6% | 0.5342 | [0.501, 0.568] |
-| 0.05 | 75.5% | 0.5358 | [0.498, 0.573] |
-| 0.08 | 60.7% | 0.5474 | [0.508, 0.587] |
+| 0.0 | 100.0% | 0.5172 | [0.487, 0.548] |
+| 0.03 | 81.1% | 0.5339 | [0.499, 0.568] |
+| 0.05 | 76.5% | 0.5434 | [0.505, 0.579] |
+| 0.08 | 61.6% | 0.5483 | [0.504, 0.589] |
 
-Best confident slice: **0.5474 on 60.7% of days**.
+Best confident slice: **0.5483 on 61.6% of days**.
 
 ## Per-year stability
 | year | n | accuracy | auc |
 |---|---|---|---|
-| 2018 | 153 | 0.5621 | 0.598 |
-| 2019 | 252 | 0.5198 | 0.4701 |
-| 2020 | 253 | 0.5257 | 0.5606 |
-| 2021 | 252 | 0.5476 | 0.577 |
-| 2022 | 251 | 0.5618 | 0.5908 |
-| 2023 | 250 | 0.512 | 0.5149 |
-| 2024 | 252 | 0.504 | 0.5133 |
-| 2025 | 251 | 0.5657 | 0.5714 |
-| 2026 | 120 | 0.4 | 0.3913 |
+| 2018 | 153 | 0.549 | 0.6043 |
+| 2019 | 252 | 0.5119 | 0.4596 |
+| 2020 | 253 | 0.5257 | 0.5833 |
+| 2021 | 252 | 0.5238 | 0.5706 |
+| 2022 | 251 | 0.5737 | 0.6155 |
+| 2023 | 250 | 0.524 | 0.5268 |
+| 2024 | 252 | 0.4841 | 0.514 |
+| 2025 | 251 | 0.5179 | 0.5601 |
+| 2026 | 120 | 0.3917 | 0.3538 |
 
 ## Model
-- 28 features selected (L1, C=0.1) of 155
-  candidates. Top: VALE_div_5d, sgx_io_mom5, CNY_vol_20d, DBB_div_1d, TX_div_20d, china_ferrous_div, VALE_div_1d, volatility_60d
+- 31 features selected (L1, C=0.1) of 157
+  candidates. Top: VALE_div_5d, sgx_io_mom5, CNY_vol_20d, DBB_div_1d, TX_div_20d, VALE_div_1d, dce_io_div, volatility_60d
 
 ---
 *Research model — not financial advice.*

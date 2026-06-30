@@ -64,7 +64,8 @@ def _align_series(df_dates: pd.DataFrame, csv_path: Path,
 
 
 def china_ferrous_features(df: pd.DataFrame, shift_d: int = 0,
-                           exclude_sgx: bool = False) -> pd.DataFrame:
+                           exclude_sgx: bool = False,
+                           include_prefixes: list | None = None) -> pd.DataFrame:
     """China ferrous complex features from Bloomberg CSVs (all optional).
 
     TIMING GUIDE — which shift_d to use:
@@ -97,6 +98,8 @@ def china_ferrous_features(df: pd.DataFrame, shift_d: int = 0,
 
     overnight_rets = []
     for csv_path, col, prefix in series_map:
+        if include_prefixes is not None and prefix not in include_prefixes:
+            continue
         if not csv_path.exists():
             continue
         px = _align_series(df, csv_path, col)
@@ -148,9 +151,11 @@ def build_panel():
     df = base.create_target(df)
     Xc = base.steel_features(df, ext_cols).reset_index(drop=True)
     Xd = base.divergence_features(base.fetch_macro(), df["close"], df["date"]).reset_index(drop=True)
-    # China ferrous same-day features: SHFE/DCE close at ~2am ET, night-before decides at 4pm ET.
-    # shift_d=0 → use day-t China data (genuinely available 14h before decision).
-    Xf = china_ferrous_features(df, shift_d=0).reset_index(drop=True)
+    # Only include confirmed-good China ferrous series. RBA Comdty (shfe_rb) and HC1 Comdty
+    # (shfe_hrc) are unverified tickers: RBA has -0.02 correlation with DCE iron ore and a
+    # 5x equity-like uptrend, indicating it is the wrong instrument. Exclude until confirmed.
+    Xf = china_ferrous_features(df, shift_d=0,
+                                include_prefixes=["dce_io", "dce_cc", "sgx_io"]).reset_index(drop=True)
     X = pd.concat([Xc, Xd, Xf], axis=1)
     y = df["target_up"].to_numpy(int)
     return df, X, y
