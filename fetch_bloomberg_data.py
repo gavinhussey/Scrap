@@ -46,10 +46,11 @@ STEEL_TICKERS = [
     ("IOE1 Comdty",  "dce_io_close",   "dce_iron_ore.csv",     "DCE iron ore 1st generic (CNY/t)"),
     # ✓ GOOD (3,115 rows 2014-2026) — skip unless re-fetching everything
     ("SCO1 Comdty",  "sgx_io_close",   "sgx_iron_ore.csv",     "SGX iron ore 62% Fe (USD/t)"),
-    # ⚠️  RE-FETCH NEEDED: RBTA returned only 416 rows (84% sparse). Try RBA Comdty.
-    ("RBA Comdty",   "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
-    # ⚠️  RE-FETCH NEEDED: HCA returned only 107 rows (96% sparse). Try HC1 Comdty.
-    ("HC1 Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
+    # ⚠️  RE-FETCH NEEDED: RBTA/RBA were wrong. Try RBT1 Comdty — verify DES <GO> first.
+    ("RBT1 Comdty",  "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
+    # ⚠️  RE-FETCH NEEDED: HCA/HC1 were wrong. Try HCT1 Comdty (same pattern as RBT1).
+    # NOTE: Do NOT use CMX HRC (US Midwest) — we need SHFE HRC (China). Verify DES <GO>.
+    ("HCT1 Comdty",  "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
     # ❌ BROKEN: JMA/JM01 failed. Try CKC1 Comdty (DCE coking coal 1st generic).
     ("CKC1 Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
@@ -57,12 +58,10 @@ STEEL_TICKERS = [
 # To re-fetch ONLY the broken tickers (faster), set STEEL_TICKERS_REFIX to True and run.
 # The good DCE/SGX iron ore data will be skipped automatically by --skip-good flag below.
 STEEL_TICKERS_BROKEN_ONLY = [
-    ("RBA Comdty",   "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
-    ("HC1 Comdty",   "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
-    # JMA=3 rows broken, JM01=failed. JM1 is the standard DCE 1st generic format.
-    # If JM1 also fails: on Bloomberg type  JM <GO>  → Comdty → pick "DCE COKING COAL FUTURES"
-    # then hit DES <GO> to confirm the ticker and substitute it here.
-    ("CKC1 Comdty",   "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
+    # Verify each with DES <GO> before running
+    ("RBT1 Comdty",  "shfe_rb_close",  "shfe_rebar.csv",       "SHFE rebar 1st generic (CNY/t)"),
+    ("HCT1 Comdty",  "shfe_hrc_close", "shfe_hrc.csv",         "SHFE hot-rolled coil 1st generic (CNY/t)"),
+    ("CKC1 Comdty",  "dce_cc_close",   "dce_coking_coal.csv",  "DCE coking coal 1st generic (CNY/t)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
