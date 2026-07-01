@@ -17,6 +17,7 @@ env/
 output/
 cache/
 copper_features_output/
+direction_models/*/outputs/*.pkl
 
 # Local/editor files
 .claude/

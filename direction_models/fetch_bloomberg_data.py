@@ -35,10 +35,10 @@ BASE = Path(__file__).resolve().parent
 
 # ──────────────────────────────────────────────────────────────────────────────
 # STEEL — China ferrous complex
-# Outputs -> steel_direction_model_v1/data/external/
+# Outputs -> steel/data/external/
 # ⚠️  Verify each ticker: open Bloomberg, type ticker <GO>, then DES <GO>
 # ──────────────────────────────────────────────────────────────────────────────
-STEEL_OUT = BASE / "steel_direction_model_v1" / "data" / "external"
+STEEL_OUT = BASE / "steel" / "data" / "external"
 
 STEEL_TICKERS = [
     # ticker               column           filename                  description
@@ -66,10 +66,10 @@ STEEL_TICKERS_BROKEN_ONLY = [
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ALUMINUM — SHFE aluminum, LME inventory, European gas
-# Outputs -> aluminum_direction_model_v1/data/external/
+# Outputs -> aluminum/data/external/
 # ⚠️  Verify each ticker before running
 # ──────────────────────────────────────────────────────────────────────────────
-ALUMINUM_OUT = BASE / "aluminum_direction_model_v1" / "data" / "external"
+ALUMINUM_OUT = BASE / "aluminum" / "data" / "external"
 
 ALUMINUM_TICKERS = [
     # ticker               column            filename                       description
@@ -237,16 +237,16 @@ def main():
         if total_ok:
             print("""
   Next steps on this PC:
-    git add steel_direction_model_v1/data/external/
-    git add aluminum_direction_model_v1/data/external/
+    git add direction_models/steel/data/external/
+    git add direction_models/aluminum/data/external/
     git commit -m "Add Bloomberg data: China ferrous + aluminum fundamentals"
     git push
 
   Then on your Mac:
     git pull
-    cd steel_direction_model_v1  &&  python iron_ore_direction_model.py
-    cd steel_direction_model_v1  &&  python iron_ore_morning_model.py
-    cd aluminum_direction_model_v1  &&  python lme_aluminum_morning_model.py
+    cd steel  &&  python iron_ore_direction_model.py
+    cd steel  &&  python iron_ore_morning_model.py
+    cd aluminum  &&  python lme_aluminum_morning_model.py
 """)
     print(f"{'='*60}")
 
