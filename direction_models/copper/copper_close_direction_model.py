@@ -52,6 +52,7 @@ from sklearn.preprocessing import RobustScaler
 BASE_DIR = Path(__file__).resolve().parent
 OUT_DIR = BASE_DIR / "outputs" / "copper_close_direction"
 MACRO_CACHE = BASE_DIR / "data" / "external" / "macro_cache" / "macro_prices_expanded.csv"
+HG2_CACHE = BASE_DIR / "data" / "external" / "comex_copper_hg2.csv"
 
 WARMUP_ROWS = 60
 MISSING_FRAC_LIMIT = 0.35
@@ -367,6 +368,32 @@ def divergence_features(macro: pd.DataFrame, close: pd.Series, dates: pd.Series)
 
 
 # ----------------------------------------------------------------------------
+# Features: COMEX futures curve (front vs 2nd-month) — contango/backwardation
+# ----------------------------------------------------------------------------
+def curve_features(close: pd.Series, dates: pd.Series) -> pd.DataFrame:
+    """Calendar-spread features from the COMEX copper curve.
+
+    Both legs (front-month `close` and HG2 2nd-nearby) settle same-day on COMEX,
+    so this reflects information available at night-before prediction time —
+    unlike the LME features (real but only usable in the morning model because
+    the LME session hasn't happened yet at night-before time).
+    """
+    if not HG2_CACHE.exists():
+        return pd.DataFrame(index=range(len(dates)))
+    hg2 = pd.read_csv(HG2_CACHE, parse_dates=["date"]).sort_values("date").drop_duplicates("date")
+    merged = pd.merge_asof(pd.DataFrame({"date": dates}), hg2, on="date", direction="backward")
+    second = merged["hg2_close"].to_numpy()
+    front = close.to_numpy()
+    slope = _safe_div(pd.Series(front - second), pd.Series(front))  # >0 = backwardation
+    f = pd.DataFrame(index=range(len(dates)))
+    f["curve_slope"] = slope.to_numpy()
+    f["curve_slope_chg_1d"] = slope.diff(1).to_numpy()
+    f["curve_slope_chg_5d"] = slope.diff(5).to_numpy()
+    f["curve_slope_z20"] = ((slope - slope.rolling(20).mean()) / slope.rolling(20).std()).to_numpy()
+    return f.replace([np.inf, -np.inf], np.nan)
+
+
+# ----------------------------------------------------------------------------
 # Feature filtering (decided on TRAIN rows only)
 # ----------------------------------------------------------------------------
 def filter_features(X: pd.DataFrame, train_idx: np.ndarray):
@@ -639,7 +666,13 @@ def main() -> int:
     Xc = copper_features(df, meta["merged_external_cols"]).reset_index(drop=True)
     macro = fetch_macro()
     Xd = divergence_features(macro, df["close"], df["date"]).reset_index(drop=True)
-    X = pd.concat([Xc, Xd], axis=1)
+    Xcurve = curve_features(df["close"], df["date"]).reset_index(drop=True)
+    if Xcurve.shape[1]:
+        log(f"Curve features: {HG2_CACHE.name} found, added {Xcurve.shape[1]} term-structure features.")
+    else:
+        log(f"Curve features: {HG2_CACHE.name} not found — skipping term-structure block "
+            f"(run bloombergCopper.py to populate).")
+    X = pd.concat([Xc, Xd, Xcurve], axis=1)
 
     # Keep the full panel: the warm-up rows carry NaNs that are median-imputed inside
     # each fold, and the walk-forward only scores from INIT_TRAIN onward anyway.
