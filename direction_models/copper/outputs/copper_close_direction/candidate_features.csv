@@ -10,7 +10,6 @@ momentum_5d
 momentum_10d
 momentum_20d
 momentum_60d
-momentum_126d
 price_vs_ma5
 price_vs_ma20
 price_vs_ma60
@@ -72,10 +71,6 @@ dow_sin
 dow_cos
 month_sin
 month_cos
-eom_flag
-som_flag
-week_of_month
-expiry_week
 FCX_div_1d
 FCX_div_5d
 FCX_div_20d
@@ -167,18 +162,3 @@ CNY_ret_1d
 CNY_ret_5d
 CNY_mom_20d
 CNY_vol_20d
-cu_gld_ratio_ret1
-cu_gld_ratio_mom20
-cu_gld_ratio_mom63
-cu_gld_ratio_z20
-cu_gld_ratio_z63
-cu_oil_ratio_ret1
-cu_oil_ratio_mom20
-cu_oil_ratio_mom63
-lme_dayt_ret
-lme_dayt_ret_z20
-lme_dayt_mom5
-lme_dayt_mom20
-lme_dayt_basis
-lme_dayt_basis_chg
-lme_dayt_basis_z20
